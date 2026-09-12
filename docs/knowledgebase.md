@@ -3,11 +3,10 @@
 Synthesized from the full project session history:
 
 - **opencode session** `ses_fc351662cffe` — 772 messages, Aug 26–29 2026
-  (`C:\Users\Perch\Downloads\rawrec.json`, digest at `session-ses_fc35.md`).
+  (`rawrec.json`, digest at `session-ses_fc35.md`).
 - **Antigravity IDE session** — 1,196 transcript steps, Aug 27–28 2026
-  (`C:\Users\Perch\.gemini\antigravity\brain\861491d7-...\.system_generated\logs\
-  transcript_full.jsonl`), read directly; extracts also at `docs/history/antigravity_*.md`.
-- Both continue an **original planning conversation** archived at repo root as
+  (`transcript_full.jsonl`), read directly.
+- Both continue an **original planning conversation** archived as
   `bypassing-qualcomm-isp-for-raw-sensor-image.json` (the project's session lineage is
   original-plan → Antigravity → opencode, each picking up the prior's transcript).
 
@@ -521,11 +520,10 @@ shaped the current codebase:
 - The opencode session spent effort re-deriving facts (e.g. the DNG SubIFD bug it had
   itself introduced earlier) because the fix had landed from the other session. When
   resuming, read `git`-less state via PLAN.md + the file logger + test names first.
-- Antigravity transcripts live in
-  `C:\Users\Perch\.gemini\antigravity\brain\<id>\.system_generated\logs\transcript_full.jsonl`
-  (JSONL, one record per step; `type` = USER_INPUT / PLANNER_RESPONSE / GENERIC /
-  CHECKPOINT). **CHECKPOINT records are dense compaction summaries** — when mining an
-  old session, read those first; they compress entire bug hunts into a few paragraphs.
+- Archived transcripts (JSONL, one record per step; `type` = USER_INPUT /
+  PLANNER_RESPONSE / GENERIC / CHECKPOINT). **CHECKPOINT records are dense
+  compaction summaries** — when mining an old session, read those first; they
+  compress entire bug hunts into a few paragraphs.
 
 Kotlin pitfalls that cost compile cycles during the CLI build: primary-constructor
 params are visible in property *initializers* but **not** in `get()` accessors (make the
