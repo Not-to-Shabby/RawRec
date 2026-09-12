@@ -48,8 +48,10 @@ tools/apk_out/
 tools/jadx/
 tools/recordings/
 tools/adb/
+tools/lut_profiles/
 *.apk
 *.exe
+*.cube
 
 # ==========================================
 # Artifacts & Media Scratch
