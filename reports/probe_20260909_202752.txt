@@ -1,0 +1,61 @@
+device : Xiaomi 24069PC21G (peridot)
+soc    : qcom board=peridot sdk=36
+
+[cam0 · 26mm Wide] facing=back hw=L3 raw=true
+    optics: 4.94mm (35mm eq: 26mm, Wide)
+    sensor: 6.5536x4.9152mm orientation=90°
+    maxAnalogIso: 2239
+    raw 4096x3072 maxFPS=30.0
+    raw 4096x2304 maxFPS=30.0
+    highSpeed candidates:
+      1280x720 fpsRanges=[30-120,60-120,120-120,30-240,60-240,240-240]
+      720x480 fpsRanges=[30-120,60-120,120-120,30-240,60-240,240-240]
+      640x480 fpsRanges=[30-120,60-120,120-120,30-240,60-240,240-240]
+      1920x1080 fpsRanges=[30-120,60-120,120-120,30-240,60-240,240-240]
+    vendor tags (65):
+      org.codeaurora.qcamera3.sessionParameters.availableStreamMap
+      org.codeaurora.qcamera3.sessionParameters.overrideResourceCostValidation
+      org.codeaurora.qcamera3.sessionParameters.enableMFNR
+      org.codeaurora.qcamera3.sessionParameters.EnableSHDR
+      org.codeaurora.qcamera3.sessionParameters.EnableMFHDR
+      org.codeaurora.qcamera3.sessionParameters.HDRMode
+      org.codeaurora.qcamera3.sessionParameters.SnapshotHDRMode
+      org.codeaurora.qcamera3.sessionParameters.numPCRsBeforeStreamOn
+      ... +57 more
+
+[cam1 · 21mm Front] facing=front hw=L3 raw=true
+    optics: 2.23mm (35mm eq: 21mm, Front)
+    sensor: 3.639168x2.729376mm orientation=270°
+    maxAnalogIso: 798
+    raw 2592x1944 maxFPS=30.0
+    raw 2592x1458 maxFPS=30.0
+    highSpeed candidates:
+      1280x720 fpsRanges=[30-120,60-120,120-120]
+      720x480 fpsRanges=[30-120,60-120,120-120]
+      640x480 fpsRanges=[30-120,60-120,120-120]
+    vendor tags (65):
+      org.codeaurora.qcamera3.sessionParameters.availableStreamMap
+      org.codeaurora.qcamera3.sessionParameters.overrideResourceCostValidation
+      org.codeaurora.qcamera3.sessionParameters.enableMFNR
+      org.codeaurora.qcamera3.sessionParameters.EnableSHDR
+      org.codeaurora.qcamera3.sessionParameters.EnableMFHDR
+      org.codeaurora.qcamera3.sessionParameters.HDRMode
+      org.codeaurora.qcamera3.sessionParameters.SnapshotHDRMode
+      org.codeaurora.qcamera3.sessionParameters.numPCRsBeforeStreamOn
+      ... +57 more
+
+[cam2 · 16mm Ultrawide] facing=back hw=L3 raw=true
+    optics: 1.65mm (35mm eq: 16mm, Ultrawide)
+    sensor: 3.6736x2.75968mm orientation=90°
+    maxAnalogIso: 800
+    raw 3280x2464 maxFPS=30.0
+    vendor tags (65):
+      org.codeaurora.qcamera3.sessionParameters.availableStreamMap
+      org.codeaurora.qcamera3.sessionParameters.overrideResourceCostValidation
+      org.codeaurora.qcamera3.sessionParameters.enableMFNR
+      org.codeaurora.qcamera3.sessionParameters.EnableSHDR
+      org.codeaurora.qcamera3.sessionParameters.EnableMFHDR
+      org.codeaurora.qcamera3.sessionParameters.HDRMode
+      org.codeaurora.qcamera3.sessionParameters.SnapshotHDRMode
+      org.codeaurora.qcamera3.sessionParameters.numPCRsBeforeStreamOn
+      ... +57 more

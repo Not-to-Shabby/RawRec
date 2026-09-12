@@ -1,0 +1,9 @@
+{
+  "_comment": "Example profile schema. Runtime currently uses builtin profiles in DeviceProfiles.kt; asset loading lands in Phase 2.",
+  "match": { "manufacturer": "oem", "soc": "sm8550" },
+  "rawPacking": "MIPI10_EXPANDED_MSB",
+  "rowStrideQuirkBytes": 64,
+  "hiddenModes": { "4K60": 3 },
+  "rootOverrides": ["overrideForceSensorMode=3"],
+  "notes": "placeholder until validated on hardware"
+}

@@ -1,0 +1,77 @@
+# ==========================================
+# Gradle & Android Build Artifacts
+# ==========================================
+.gradle/
+build/
+app/build/
+/build
+/app/build
+/captures
+.externalNativeBuild/
+.cxx/
+*.iml
+local.properties
+
+# ==========================================
+# IDE & OS Specific Files
+# ==========================================
+.idea/
+/.idea
+*.ipr
+*.iws
+.DS_Store
+Thumbs.db
+ehthumbs.db
+.vscode/
+
+# ==========================================
+# AI Assistant & Workspace Scratch Files
+# ==========================================
+.zcode/
+.opencode/
+.agents/
+*.output
+
+# ==========================================
+# Session Transcripts & AI Conversation History
+# ==========================================
+bypassing-qualcomm-isp-for-raw-sensor-image.json
+session-ses_*.md
+docs/history/
+
+# ==========================================
+# Proprietary Tools, Decompiled APKs & Binaries
+# (Kept locally for research, excluded from GitHub)
+# ==========================================
+tools/apks/
+tools/apk_out/
+tools/jadx/
+tools/recordings/
+tools/adb/
+*.apk
+*.exe
+
+# ==========================================
+# Artifacts & Media Scratch
+# ==========================================
+artifacts/
+tools/*.png
+*.png
+*.rvsp
+*.dng
+*.wav
+*.raw
+*.bin
+*.bmp
+*.mp4
+*.tmp*
+batch_export/
+batch_output/
+temp_*/
+
+# ==========================================
+# Logs & Crash Dumps
+# ==========================================
+*.log
+tools/*.log
+logs/
