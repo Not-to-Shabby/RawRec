@@ -29,6 +29,7 @@ fun GlViewfinder(
     bufferWidth: Int = 960,
     bufferHeight: Int = 720,
     rawAspect: Double = 4.0 / 3.0,
+    rotation: Int = 0,
     activeLut: CubeLut? = null,
     peakingActive: Boolean = false,
     falseColorActive: Boolean = false,
@@ -41,6 +42,11 @@ fun GlViewfinder(
 
     LaunchedEffect(bufferWidth, bufferHeight) {
         renderer.updateBufferSize(bufferWidth, bufferHeight)
+    }
+
+    LaunchedEffect(rotation, rawAspect) {
+        renderer.rotation = rotation
+        renderer.rawAspect = rawAspect
     }
 
     LaunchedEffect(activeLut) {

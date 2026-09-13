@@ -52,6 +52,10 @@ class GlViewfinderRenderer(
     private var viewWidth: Int = 1
     private var viewHeight: Int = 1
 
+    // Orientation & Aspect Scaling
+    @Volatile var rotation: Int = 0
+    @Volatile var rawAspect: Double = 4.0 / 3.0
+
     // Scope controls
     @Volatile var peakingActive: Boolean = false
     @Volatile var falseColorActive: Boolean = false
@@ -63,6 +67,8 @@ class GlViewfinderRenderer(
 
     // Uniform locations
     private var uSTMatrixLoc = -1
+    private var uScaleLoc = -1
+    private var uRotationLoc = -1
     private var uTexelSizeLoc = -1
     private var uAnimTimeLoc = -1
     private var uUseLutLoc = -1
@@ -125,6 +131,8 @@ class GlViewfinderRenderer(
         }
 
         uSTMatrixLoc = GLES30.glGetUniformLocation(programId, "uSTMatrix")
+        uScaleLoc = GLES30.glGetUniformLocation(programId, "uScale")
+        uRotationLoc = GLES30.glGetUniformLocation(programId, "uRotation")
         uTexelSizeLoc = GLES30.glGetUniformLocation(programId, "uTexelSize")
         uAnimTimeLoc = GLES30.glGetUniformLocation(programId, "uAnimTime")
         uUseLutLoc = GLES30.glGetUniformLocation(programId, "uUseLut")
@@ -232,8 +240,23 @@ class GlViewfinderRenderer(
         GLES30.glUniform1i(uLut3DLoc, 1)
         GLES30.glUniform1i(uUseLutLoc, if (lutApplied && lutTextureId != 0) 1 else 0)
 
+        // Calculate square-pixel aspect ratio scaling to prevent squashing
+        val contentAspect = if (rotation == 90 || rotation == 270) rawAspect else (1.0 / rawAspect)
+        val screenAspect = viewWidth.toDouble() / viewHeight.toDouble()
+        val scaleX: Float
+        val scaleY: Float
+        if (contentAspect >= screenAspect) {
+            scaleX = 1.0f
+            scaleY = (screenAspect / contentAspect).toFloat()
+        } else {
+            scaleX = (contentAspect / screenAspect).toFloat()
+            scaleY = 1.0f
+        }
+
         // Pass Uniforms
         GLES30.glUniformMatrix4fv(uSTMatrixLoc, 1, false, stMatrix, 0)
+        GLES30.glUniform2f(uScaleLoc, scaleX, scaleY)
+        GLES30.glUniform1i(uRotationLoc, rotation)
         GLES30.glUniform2f(uTexelSizeLoc, 1.0f / viewWidth, 1.0f / viewHeight)
 
         val elapsedSec = (SystemClock.uptimeMillis() - startTimeMs) / 1000.0f
@@ -388,11 +411,24 @@ layout(location = 0) in vec2 aPosition;
 layout(location = 1) in vec2 aTexCoord;
 
 uniform mat4 uSTMatrix;
+uniform vec2 uScale;
+uniform int uRotation;
+
 out vec2 vTexCoord;
 
 void main() {
-    gl_Position = vec4(aPosition.x, aPosition.y, 0.0, 1.0);
-    vTexCoord = (uSTMatrix * vec4(aTexCoord.x, aTexCoord.y, 0.0, 1.0)).xy;
+    gl_Position = vec4(aPosition.x * uScale.x, aPosition.y * uScale.y, 0.0, 1.0);
+
+    vec2 tc = aTexCoord;
+    if (uRotation == 90) {
+        tc = vec2(1.0 - aTexCoord.y, aTexCoord.x);
+    } else if (uRotation == 180) {
+        tc = vec2(1.0 - aTexCoord.x, 1.0 - aTexCoord.y);
+    } else if (uRotation == 270) {
+        tc = vec2(aTexCoord.y, 1.0 - aTexCoord.x);
+    }
+
+    vTexCoord = (uSTMatrix * vec4(tc.x, tc.y, 0.0, 1.0)).xy;
 }
 """
 

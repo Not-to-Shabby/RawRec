@@ -333,16 +333,18 @@ fun CinemaViewfinderScreen(
             val glBufSize = remember(supportedPreviewSizes, rawAspect) {
                 chooseBufferSize(supportedPreviewSizes, rawAspect)
             }
-            LaunchedEffect(glBufSize) {
+            val r = ViewfinderMath.effectiveRotation(sensorOrientation, 0, rotationOverride, orientationMode)
+            LaunchedEffect(glBufSize, r) {
                 vfBufW = glBufSize.width
                 vfBufH = glBufSize.height
-                vfRotation = 0
+                vfRotation = r
             }
             dev.rawrec.app.ui.gl.GlViewfinder(
                 modifier = Modifier.fillMaxSize(),
                 bufferWidth = glBufSize.width,
                 bufferHeight = glBufSize.height,
                 rawAspect = rawAspect,
+                rotation = r,
                 activeLut = activeLut,
                 peakingActive = peakingActive,
                 falseColorActive = falseColorActive,
