@@ -16,6 +16,8 @@ import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -447,6 +449,10 @@ fun RawRecApp() {
                             autoDisableVfSeconds = secs
                             prefs.autoDisableVfSeconds = secs
                         }
+                        "set_storage" -> {
+                            val path = intent.getStringExtra("path")
+                            prefs.customStoragePath = if (path.isNullOrBlank() || path == "default" || path == "internal") null else path
+                        }
                     }
                 }
             }
@@ -838,6 +844,7 @@ private fun SettingsScreen(
     uiRotation: Int = 0
 ) {
     val ctx = LocalContext.current
+    val prefs = remember { dev.rawrec.app.util.AppPreferences(ctx) }
 
     var cams by remember { mutableStateOf<List<CamInfo>>(emptyList()) }
     var camMenuOpen by remember { mutableStateOf(false) }
@@ -977,6 +984,88 @@ private fun SettingsScreen(
 
         item {
             StaggeredAppear(index = 3) {
+                SectionCard(title = "Storage & Destination", icon = RawRecIcons.Folder) {
+                    var customPath by remember { mutableStateOf(prefs.customStoragePath) }
+                    val volumes = remember { controller.getStorageVolumes() }
+                    val activeDir = controller.recordingsDir()
+
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(
+                            "Active Target: ${activeDir.absolutePath}",
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        val freeGB = activeDir.freeSpace.toDouble() / (1 shl 30)
+                        val totalGB = activeDir.totalSpace.toDouble() / (1 shl 30)
+                        Text(
+                            "Free Space: %.1f GB / %.1f GB".format(freeGB, totalGB),
+                            style = dev.rawrec.app.ui.theme.TelemetryStyle,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+
+                        Text(
+                            "Detected Storage Volumes (Tap to Select):",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        volumes.forEach { vol ->
+                            val isSelected = (customPath == null && vol.isPrimary) || (customPath == vol.path.absolutePath)
+                            val volFreeGB = vol.freeBytes.toDouble() / (1 shl 30)
+                            Surface(
+                                shape = MaterialTheme.shapes.small,
+                                color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHighest,
+                                border = if (isSelected) BorderStroke(1.dp, MaterialTheme.colorScheme.primary) else BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable(!stats.active) {
+                                        val newPath = if (vol.isPrimary) null else vol.path.absolutePath
+                                        prefs.customStoragePath = newPath
+                                        customPath = newPath
+                                    }
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(10.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            if (vol.isRemovable) "💾 ${vol.description} (External USB-C)" else "📱 ${vol.description} (Internal)",
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                            color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
+                                        )
+                                        Text(
+                                            vol.path.absolutePath,
+                                            style = dev.rawrec.app.ui.theme.TelemetryStyle,
+                                            color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f) else MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                    Text(
+                                        "%.1f GB free".format(volFreeGB),
+                                        style = dev.rawrec.app.ui.theme.TelemetryStyle,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                                    )
+                                }
+                            }
+                        }
+                        Text(
+                            if (customPath != null)
+                                "Writing directly to external target volume via high-speed POSIX I/O. If disconnected, recordings auto-fallback to internal storage."
+                            else
+                                "Default internal storage selected (/sdcard/RawRec/).",
+                            style = dev.rawrec.app.ui.theme.TelemetryStyle,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
+            }
+        }
+
+        item {
+            StaggeredAppear(index = 4) {
                 dev.rawrec.app.ui.components.SectionCard(
                     title = "Viewfinder & Orientation",
                     icon = RawRecIcons.Probe

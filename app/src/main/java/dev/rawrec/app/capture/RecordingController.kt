@@ -58,7 +58,17 @@ data class RecStats(
         get() = if (rawBytesEstimate > 0) bytesWritten.toDouble() / rawBytesEstimate else 0.0
 }
 
+data class StorageVolumeInfo(
+    val description: String,
+    val path: File,
+    val isPrimary: Boolean,
+    val isRemovable: Boolean,
+    val freeBytes: Long,
+    val totalBytes: Long
+)
+
 class RecordingController(private val context: Context) {
+    private val prefs = dev.rawrec.app.util.AppPreferences(context)
 
     private class QueuedImage(
         @Volatile var image: Image?,
@@ -138,6 +148,14 @@ class RecordingController(private val context: Context) {
     @Volatile private var activeThermalStage = SocStage.NONE
 
     fun recordingsDir(): File {
+        val custom = prefs.customStoragePath?.trim().orEmpty()
+        if (custom.isNotEmpty()) {
+            val customDir = File(custom)
+            if (customDir.exists() || customDir.mkdirs() || customDir.canWrite()) {
+                return customDir
+            }
+            AppLog.w(TAG, "Configured custom storage path $custom unavailable, falling back to internal storage")
+        }
         val rootDir = File(android.os.Environment.getExternalStorageDirectory(), "RawRec")
         if (rootDir.exists() || rootDir.mkdirs() || rootDir.canWrite()) {
             return rootDir
@@ -145,15 +163,76 @@ class RecordingController(private val context: Context) {
         return File(context.getExternalFilesDir(null) ?: context.filesDir, "recordings")
     }
 
+    fun getStorageVolumes(): List<StorageVolumeInfo> {
+        return runCatching {
+            val sm = context.getSystemService(Context.STORAGE_SERVICE) as? android.os.storage.StorageManager
+            val volumes = sm?.storageVolumes.orEmpty()
+            val list = mutableListOf<StorageVolumeInfo>()
+
+            for (v in volumes) {
+                val dir = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+                    v.directory
+                } else null
+
+                val targetDir = if (dir != null) {
+                    File(dir, "RawRec")
+                } else if (v.isPrimary) {
+                    File(android.os.Environment.getExternalStorageDirectory(), "RawRec")
+                } else null
+
+                if (targetDir != null) {
+                    val desc = v.getDescription(context)
+                    val isPrim = v.isPrimary
+                    val isRem = v.isRemovable
+                    val root = targetDir.parentFile ?: targetDir
+                    val free = runCatching { root.freeSpace }.getOrDefault(0L)
+                    val total = runCatching { root.totalSpace }.getOrDefault(0L)
+                    list.add(StorageVolumeInfo(desc, targetDir, isPrim, isRem, free, total))
+                }
+            }
+            if (list.isEmpty()) {
+                val primary = File(android.os.Environment.getExternalStorageDirectory(), "RawRec")
+                list.add(
+                    StorageVolumeInfo(
+                        "Internal Shared Storage",
+                        primary,
+                        isPrimary = true,
+                        isRemovable = false,
+                        freeBytes = primary.freeSpace,
+                        totalBytes = primary.totalSpace
+                    )
+                )
+            }
+            list
+        }.getOrElse {
+            val primary = File(android.os.Environment.getExternalStorageDirectory(), "RawRec")
+            listOf(
+                StorageVolumeInfo(
+                    "Internal Shared Storage",
+                    primary,
+                    isPrimary = true,
+                    isRemovable = false,
+                    freeBytes = primary.freeSpace,
+                    totalBytes = primary.totalSpace
+                )
+            )
+        }
+    }
+
     fun listRecordings(): List<File> {
-        val primary = recordingsDir().listFiles { f -> f.name.endsWith(".rvsp") || f.name.endsWith(".mp4") }?.toList() ?: emptyList()
+        val active = recordingsDir()
+        val activeFiles = active.listFiles { f -> f.name.endsWith(".rvsp") || f.name.endsWith(".mp4") }?.toList() ?: emptyList()
+        val primaryDir = File(android.os.Environment.getExternalStorageDirectory(), "RawRec")
+        val primaryFiles = if (primaryDir.exists() && primaryDir != active) {
+            primaryDir.listFiles { f -> f.name.endsWith(".rvsp") || f.name.endsWith(".mp4") }?.toList() ?: emptyList()
+        } else emptyList()
         val legacyDir = File(context.getExternalFilesDir(null) ?: context.filesDir, "recordings")
-        val legacy = if (legacyDir.exists() && legacyDir != recordingsDir()) {
+        val legacy = if (legacyDir.exists() && legacyDir != active && legacyDir != primaryDir) {
             legacyDir.listFiles { f -> f.name.endsWith(".rvsp") || f.name.endsWith(".mp4") }?.toList() ?: emptyList()
         } else {
             emptyList()
         }
-        return (primary + legacy).distinctBy { it.absolutePath }.sortedByDescending { it.lastModified() }
+        return (activeFiles + primaryFiles + legacy).distinctBy { it.absolutePath }.sortedByDescending { it.lastModified() }
     }
 
     private fun deviceState(): String {

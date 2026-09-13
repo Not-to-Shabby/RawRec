@@ -754,13 +754,16 @@ object Rvtool {
         profileName: String = "default",
         bakeTone: Boolean = false,
         lutPath: String? = null,
-        compensateDrops: Boolean = true
+        compensateDrops: Boolean = true,
+        onProgress: ((current: Int, total: Int) -> Unit)? = null,
+        isCancelled: () -> Boolean = { false }
     ) {
         val (h, raf) = openHeader(path)
         raf.use {
             val meta = metaJson(raf)
             val (frames, audio) = scanRecords(raf)
             val last = if (count < 0) frames.size else minOf(startFrame + count, frames.size)
+            val totalToExtract = last - startFrame
             if (startFrame >= frames.size) { println("only ${frames.size} frames"); return }
             val dir = File(outDir)
             dir.mkdirs()
@@ -780,26 +783,35 @@ object Rvtool {
             val framePeriodNs = if (h.fpsMilli > 0) (1_000_000_000_000L / h.fpsMilli) else 33_333_333L
             var writtenCount = 0
             var compensatedCount = 0
+
+            // Zero-allocation double-buffered pixel holders (avoids multi-GB heap churn on Android)
+            val expectedPixelsLen = h.width * h.height * 2
+            var currPixels = ByteArray(expectedPixelsLen)
             var prevPixels: ByteArray? = null
+            var hasPrev = false
             var prevExpNs = 0L
             var lastTsNs = -1L
 
             for (idx in startFrame until last) {
+                if (isCancelled()) break
                 val rec = frames[idx]
 
                 // If frames were dropped, duplicate the previous frame to keep A/V sync
-                if (compensateDrops && lastTsNs > 0L && rec.tsNs > lastTsNs && prevPixels != null) {
+                if (compensateDrops && lastTsNs > 0L && rec.tsNs > lastTsNs && hasPrev && prevPixels != null) {
                     val deltaNs = rec.tsNs - lastTsNs
                     if (deltaNs > 1.5 * framePeriodNs) {
                         val missing = (Math.round(deltaNs.toDouble() / framePeriodNs).toInt() - 1).coerceIn(1, 300)
                         for (gapStep in 0 until missing) {
+                            if (isCancelled()) break
                             val file = File(dir, "frame_%06d.dng".format(writtenCount))
-                            writeDng(file, h, prevPixels, model, blackQuad, prevExpNs, meta, profile, bakeTone)
+                            writeDng(file, h, prevPixels!!, model, blackQuad, prevExpNs, meta, profile, bakeTone)
                             writtenCount++
                             compensatedCount++
+                            onProgress?.invoke(writtenCount, totalToExtract)
                         }
                     }
                 }
+                if (isCancelled()) break
 
                 val samples = samplesOf(h, decodedPayload(h, readPayload(raf, rec)))
                 if (bakeTone && profile != ColorScience.ToneProfile.DEFAULT) {
@@ -810,23 +822,30 @@ object Rvtool {
                         samples[i] = ColorScience.gradeRawSample(samples[i].toInt() and 0xFFFF, black, h.whiteLevel, profile)
                     }
                 }
-                val pixels = ByteArray(h.width * h.height * 2)
-                val pb = pixels.asByteBuffer()
+                val pb = currPixels.asByteBuffer()
                 for (s in samples) { pb.putShort(s) }
-                pb.rewind()
+
                 val file = File(dir, "frame_%06d.dng".format(writtenCount))
-                writeDng(file, h, pixels, model, blackQuad, rec.expNs, meta, profile, bakeTone)
+                writeDng(file, h, currPixels, model, blackQuad, rec.expNs, meta, profile, bakeTone)
                 writtenCount++
-                prevPixels = pixels
+
+                // Swap double buffers so prevPixels preserves the previous frame for drop compensation
+                if (prevPixels == null) prevPixels = ByteArray(expectedPixelsLen)
+                val tmp = prevPixels!!
+                prevPixels = currPixels
+                currPixels = tmp
+                hasPrev = true
+
                 prevExpNs = rec.expNs
                 lastTsNs = rec.tsNs
+                onProgress?.invoke(writtenCount, totalToExtract)
                 if (writtenCount % 30 == 0) println("  $writtenCount frames...")
             }
             val bakeInfo = if (bakeTone) " (baked tone)" else if (profile != ColorScience.ToneProfile.DEFAULT) " (DNG ProfileToneCurve: ${profile.displayName})" else ""
             val compInfo = if (compensatedCount > 0) " (compensated $compensatedCount dropped frame(s) for A/V sync)" else ""
             println("extracted $writtenCount DNG frames ($startFrame..${last - 1}) into $outDir$bakeInfo$compInfo")
 
-            if (audio.isNotEmpty()) {
+            if (!isCancelled() && audio.isNotEmpty()) {
                 val audioDir = File(dir, "audio").apply { mkdirs() }
                 val audioFile = File(audioDir, "audio.wav")
                 wav(path, audioFile.absolutePath)

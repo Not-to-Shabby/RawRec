@@ -56,6 +56,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import dev.rawrec.app.ui.components.ChoiceChipRow
 import dev.rawrec.app.ui.components.RawRecIcons
 import dev.rawrec.app.ui.theme.DeckLabelStyle
 import dev.rawrec.tool.ColorScience
@@ -68,6 +69,11 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 
+enum class ExportFormat(val label: String, val subtitle: String) {
+    MP4("HLG MP4", "Hardware video (H.264 / AAC) with embedded color grade"),
+    CINEMA_DNG("CinemaDNG", "Lossless 16-bit DNG frame sequence + 48kHz WAV audio")
+}
+
 @Composable
 fun GalleryExportDialog(
     file: File,
@@ -79,6 +85,8 @@ fun GalleryExportDialog(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
+    var selectedFormat by remember { mutableStateOf(ExportFormat.MP4) }
+    var bakeToneInDng by remember { mutableStateOf(false) }
     var selectedProfile by remember { mutableStateOf(ColorScience.ToneProfile.CINE_HLG) }
     var selectedRotation by remember(initialRotation) { mutableIntStateOf(initialRotation) }
     var dropdownExpanded by remember { mutableStateOf(false) }
@@ -180,7 +188,7 @@ fun GalleryExportDialog(
                     modifier = Modifier.size(22.dp)
                 )
                 Text(
-                    "EXPORT HLG MP4",
+                    if (selectedFormat == ExportFormat.MP4) "EXPORT HLG MP4" else "EXPORT CINEMADNG SEQUENCE",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface
@@ -208,34 +216,112 @@ fun GalleryExportDialog(
                             color = MaterialTheme.colorScheme.onSurface
                         )
                         Text(
-                            text = "Size: ${formatFileSize(file.length())} · Format: Hardware MP4 (H.264 / AAC)",
+                            text = "Size: ${formatFileSize(file.length())} · Format: Hardware MP4 or CinemaDNG",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }
 
-                // GPU Acceleration Badge
-                Surface(
-                    shape = MaterialTheme.shapes.extraSmall,
-                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        Text("⚡", fontSize = 12.sp)
+                // Export Target Format Selector
+                if (!isExporting && exportedFile == null) {
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text(
-                            text = "Acceleration: ${GpuManager.activeBackend.deviceName}",
-                            style = DeckLabelStyle,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                            "Export Target Format",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        ChoiceChipRow(
+                            options = ExportFormat.values().map { it.label },
+                            selected = { it == selectedFormat.label },
+                            onSelect = { label ->
+                                selectedFormat = ExportFormat.values().firstOrNull { it.label == label } ?: ExportFormat.MP4
+                            }
+                        )
+                        Text(
+                            selectedFormat.subtitle,
+                            style = dev.rawrec.app.ui.theme.TelemetryStyle,
+                            color = MaterialTheme.colorScheme.primary
                         )
                     }
                 }
 
-                // Live Dynamic Rotation Preview Thumbnail
-                if (!isExporting && exportedFile == null) {
+                // GPU Acceleration Badge
+                if (selectedFormat == ExportFormat.MP4) {
+                    Surface(
+                        shape = MaterialTheme.shapes.extraSmall,
+                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Text("⚡", fontSize = 12.sp)
+                            Text(
+                                text = "Acceleration: ${GpuManager.activeBackend.deviceName}",
+                                style = DeckLabelStyle,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                        }
+                    }
+                }
+
+                // CinemaDNG Destination & Strategy
+                if (selectedFormat == ExportFormat.CINEMA_DNG && !isExporting && exportedFile == null) {
+                    Surface(
+                        shape = MaterialTheme.shapes.small,
+                        color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+                    ) {
+                        Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text(
+                                "Destination Directory",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                "${file.parentFile?.absolutePath}/${file.nameWithoutExtension}_dng/",
+                                style = dev.rawrec.app.ui.theme.TelemetryStyle,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Text(
+                                "Writes uncompressed single-IFD0 16-bit DNG files with calibration opcodes and 48kHz stereo WAV in audio/audio.wav (compatible with DaVinci Resolve & Premiere Pro).",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(
+                            "DNG Tone Curve Strategy",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        ChoiceChipRow(
+                            options = listOf("Embed Tag 50981", "Bake Tone Pixels"),
+                            selected = { opt ->
+                                if (bakeToneInDng) opt.startsWith("Bake") else opt.startsWith("Embed")
+                            },
+                            onSelect = { label ->
+                                bakeToneInDng = label.startsWith("Bake")
+                            }
+                        )
+                        Text(
+                            if (bakeToneInDng)
+                                "Bakes the tone curve directly into raw 16-bit pixel samples (destructive)."
+                            else
+                                "Embeds the selected tone profile non-destructively as TIFF Tag 50981 (ProfileToneCurve). Raw Bayer pixels stay untouched.",
+                            style = dev.rawrec.app.ui.theme.TelemetryStyle,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
+
+                // Live Dynamic Rotation Preview Thumbnail (MP4 Only)
+                if (selectedFormat == ExportFormat.MP4 && !isExporting && exportedFile == null) {
                     thumbnailBitmap?.let { bmp ->
                         Surface(
                             shape = MaterialTheme.shapes.small,
@@ -475,26 +561,50 @@ fun GalleryExportDialog(
                     onClick = {
                         isExporting = true
                         exportError = null
-                        wakeLock?.acquire(10 * 60 * 1000L) // max 10 min
+                        wakeLock?.acquire(30 * 60 * 1000L) // max 30 min for large takes
                         exportJob = scope.launch(Dispatchers.IO) {
                             try {
-                                val outName = "${file.nameWithoutExtension}_${selectedProfile.id}.mp4"
-                                val outFile = File(file.parentFile, outName)
-                                val res = dev.rawrec.app.export.AndroidVideoExporter.export(
-                                    rvspPath = file.absolutePath,
-                                    outMp4Path = outFile.absolutePath,
-                                    profile = selectedProfile,
-                                    rotationDegrees = selectedRotation,
-                                    onProgress = { cur, tot ->
-                                        currentFrame = cur
-                                        totalFrames = tot
-                                        exportProgress = if (tot > 0) cur.toFloat() / tot else 0f
+                                if (selectedFormat == ExportFormat.MP4) {
+                                    val outName = "${file.nameWithoutExtension}_${selectedProfile.id}.mp4"
+                                    val outFile = File(file.parentFile, outName)
+                                    val res = dev.rawrec.app.export.AndroidVideoExporter.export(
+                                        rvspPath = file.absolutePath,
+                                        outMp4Path = outFile.absolutePath,
+                                        profile = selectedProfile,
+                                        rotationDegrees = selectedRotation,
+                                        onProgress = { cur, tot ->
+                                            currentFrame = cur
+                                            totalFrames = tot
+                                            exportProgress = if (tot > 0) cur.toFloat() / tot else 0f
+                                        }
+                                    )
+                                    withContext(Dispatchers.Main) {
+                                        isExporting = false
+                                        exportedFile = res
+                                        onExportComplete(res)
                                     }
-                                )
-                                withContext(Dispatchers.Main) {
-                                    isExporting = false
-                                    exportedFile = res
-                                    onExportComplete(res)
+                                } else {
+                                    val outDir = File(file.parentFile, "${file.nameWithoutExtension}_dng")
+                                    outDir.mkdirs()
+                                    runCatching { File(outDir, ".nomedia").createNewFile() }
+                                    Rvtool.extract(
+                                        path = file.absolutePath,
+                                        outDir = outDir.absolutePath,
+                                        profileName = selectedProfile.id,
+                                        bakeTone = bakeToneInDng,
+                                        compensateDrops = true,
+                                        onProgress = { cur, tot ->
+                                            currentFrame = cur
+                                            totalFrames = tot
+                                            exportProgress = if (tot > 0) cur.toFloat() / tot else 0f
+                                        },
+                                        isCancelled = { exportJob?.isCancelled == true }
+                                    )
+                                    withContext(Dispatchers.Main) {
+                                        isExporting = false
+                                        exportedFile = outDir
+                                        onExportComplete(outDir)
+                                    }
                                 }
                             } catch (e: Exception) {
                                 withContext(Dispatchers.Main) {
@@ -509,7 +619,7 @@ fun GalleryExportDialog(
                         }
                     }
                 ) {
-                    Text("Start Export")
+                    Text(if (selectedFormat == ExportFormat.MP4) "Start MP4 Export" else "Start DNG Export")
                 }
             } else {
                 OutlinedButton(

@@ -528,4 +528,21 @@ object RawRecIcons {
             }
         }
     }
+
+    val Folder: ImageVector by lazy {
+        builder("Folder") {
+            path(
+                fill = null, stroke = Stroke, strokeLineWidth = STROKE,
+                strokeLineCap = StrokeCap.Round, strokeLineJoin = StrokeJoin.Round
+            ) {
+                moveTo(3f, 7f)
+                lineTo(9f, 7f)
+                lineTo(11f, 9f)
+                lineTo(21f, 9f)
+                lineTo(21f, 19f)
+                lineTo(3f, 19f)
+                close()
+            }
+        }
+    }
 }

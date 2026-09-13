@@ -83,6 +83,11 @@ class AppPreferences(
         get() = prefs.getBoolean("pref_presentation_stretch", false)
         set(value) = prefs.edit().putBoolean("pref_presentation_stretch", value).apply()
 
+    /** Custom recording destination directory (e.g. external USB-C SSD / storage volume). */
+    var customStoragePath: String?
+        get() = prefs.getString("pref_custom_storage_path", null)
+        set(value) = prefs.edit().putString("pref_custom_storage_path", value).apply()
+
     fun loadCameraControlState(): CameraControlState = CameraControlState(
         iso = prefs.getInt("pref_iso", 100),
         autoIso = prefs.getBoolean("pref_auto_iso", false),
