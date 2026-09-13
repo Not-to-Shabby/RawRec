@@ -29,6 +29,8 @@ object Rvsp {
     const val PACKING_EXPANDED_LSB = 0
     const val PACKING_MIPI_PACKED = 1
     const val PACKING_EXPANDED_MSB = 2
+    const val PACKING_MIPI_RAW12 = 3
+    const val PACKING_MIPI_RAW14 = 4
 
     const val CFA_RGGB = 0
     const val CFA_GRBG = 1

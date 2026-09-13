@@ -55,6 +55,46 @@ object RawPackNative {
         cropHeight: Int
     ): Boolean
 
+    external fun packMipi12DirectInto(
+        src: ByteBuffer,
+        dst: ByteArray,
+        rowStride: Int,
+        pixelStride: Int,
+        width: Int,
+        height: Int
+    ): Boolean
+
+    external fun packMipi12CroppedDirectInto(
+        src: ByteBuffer,
+        dst: ByteArray,
+        rowStride: Int,
+        pixelStride: Int,
+        cropLeft: Int,
+        cropTop: Int,
+        cropWidth: Int,
+        cropHeight: Int
+    ): Boolean
+
+    external fun packMipi14DirectInto(
+        src: ByteBuffer,
+        dst: ByteArray,
+        rowStride: Int,
+        pixelStride: Int,
+        width: Int,
+        height: Int
+    ): Boolean
+
+    external fun packMipi14CroppedDirectInto(
+        src: ByteBuffer,
+        dst: ByteArray,
+        rowStride: Int,
+        pixelStride: Int,
+        cropLeft: Int,
+        cropTop: Int,
+        cropWidth: Int,
+        cropHeight: Int
+    ): Boolean
+
     /** Cropped + 1/4 YUV downscale of the same band (proxy variant). */
     external fun packMipi10ProxyCroppedDirect(
         src: ByteBuffer,

@@ -170,6 +170,113 @@ static inline void pack_row(
     pack_row_scalar(row, pixelStride, groups, dst);
 }
 
+// ---------------------------------------------------------------------------
+// MIPI RAW12 packing kernel — 2 pixels (12-bit) -> 3 bytes
+// p0: dst[0] = p0>>4, dst[1] = p1>>4, dst[2] = ((p1&0xF)<<4) | (p0&0xF)
+// ---------------------------------------------------------------------------
+static inline void pack_row_raw12_scalar(
+        const uint8_t* row, int pixelStride, int groups, unsigned char* dst) {
+    for (int gx = 0; gx < groups; ++gx) {
+        const int x = gx * 2;
+        auto px = [&](int k) -> int {
+            const int xx = x + k;
+            const uint8_t* p = row + static_cast<size_t>(xx) * pixelStride;
+            return p[0] | (p[1] << 8);
+        };
+        const int p0 = px(0) & 4095;
+        const int p1 = px(1) & 4095;
+        dst[0] = static_cast<unsigned char>(p0 >> 4);
+        dst[1] = static_cast<unsigned char>(p1 >> 4);
+        dst[2] = static_cast<unsigned char>(((p1 & 0xF) << 4) | (p0 & 0xF));
+        dst += 3;
+    }
+}
+
+#if RAWREC_HAVE_NEON
+static inline void pack8_neon_raw12(const uint16_t* src, unsigned char* dst) {
+    const uint16x8_t s = vld1q_u16(src);
+    const uint8x8_t hi = vshrn_n_u16(s, 4);
+    const uint16x8_t lo = vandq_u16(s, vdupq_n_u16(0x0F));
+    const uint16_t wData[8] = {1, 16, 1, 16, 1, 16, 1, 16};
+    const uint16x8_t weights = vld1q_u16(wData);
+    const uint16x8_t prod = vmulq_u16(lo, weights);
+    const uint16x4_t sum2 = vpadd_u16(vget_low_u16(prod), vget_high_u16(prod));
+
+    const uint8_t hiArr[8] = {
+        vget_lane_u8(hi, 0), vget_lane_u8(hi, 1),
+        vget_lane_u8(hi, 2), vget_lane_u8(hi, 3),
+        vget_lane_u8(hi, 4), vget_lane_u8(hi, 5),
+        vget_lane_u8(hi, 6), vget_lane_u8(hi, 7)
+    };
+    dst[0] = hiArr[0]; dst[1] = hiArr[1]; dst[2] = static_cast<unsigned char>(vget_lane_u16(sum2, 0));
+    dst[3] = hiArr[2]; dst[4] = hiArr[3]; dst[5] = static_cast<unsigned char>(vget_lane_u16(sum2, 1));
+    dst[6] = hiArr[4]; dst[7] = hiArr[5]; dst[8] = static_cast<unsigned char>(vget_lane_u16(sum2, 2));
+    dst[9] = hiArr[6]; dst[10] = hiArr[7]; dst[11] = static_cast<unsigned char>(vget_lane_u16(sum2, 3));
+}
+
+static inline void pack16_neon_raw12(const uint16_t* src, unsigned char* dst) {
+    pack8_neon_raw12(src, dst);
+    pack8_neon_raw12(src + 8, dst + 12);
+}
+#endif
+
+static inline void pack_row_raw12(
+        const uint8_t* row, int pixelStride, int width, unsigned char* dst) {
+    const int groups = (width + 1) / 2;
+#if RAWREC_HAVE_NEON
+    if (pixelStride == 2) {
+        const uint16_t* src = reinterpret_cast<const uint16_t*>(row);
+        int x = 0;
+        for (; x + 16 <= width; x += 16, dst += 24) {
+            pack16_neon_raw12(src + x, dst);
+        }
+        for (; x < width; x += 2, dst += 3) {
+            const uint16_t* s = src + x;
+            const int p0 = s[0] & 4095;
+            const int p1 = (x + 1 < width) ? (s[1] & 4095) : 0;
+            dst[0] = static_cast<unsigned char>(p0 >> 4);
+            dst[1] = static_cast<unsigned char>(p1 >> 4);
+            dst[2] = static_cast<unsigned char>(((p1 & 0xF) << 4) | (p0 & 0xF));
+        }
+        return;
+    }
+#endif
+    pack_row_raw12_scalar(row, pixelStride, groups, dst);
+}
+
+// ---------------------------------------------------------------------------
+// MIPI RAW14 packing kernel — 4 pixels (14-bit) -> 7 bytes
+// ---------------------------------------------------------------------------
+static inline void pack_row_raw14_scalar(
+        const uint8_t* row, int pixelStride, int groups, unsigned char* dst) {
+    for (int gx = 0; gx < groups; ++gx) {
+        const int x = gx * 4;
+        auto px = [&](int k) -> int {
+            const int xx = x + k;
+            const uint8_t* p = row + static_cast<size_t>(xx) * pixelStride;
+            return p[0] | (p[1] << 8);
+        };
+        const int p0 = px(0) & 16383;
+        const int p1 = px(1) & 16383;
+        const int p2 = px(2) & 16383;
+        const int p3 = px(3) & 16383;
+        dst[0] = static_cast<unsigned char>(p0 >> 6);
+        dst[1] = static_cast<unsigned char>(p1 >> 6);
+        dst[2] = static_cast<unsigned char>(p2 >> 6);
+        dst[3] = static_cast<unsigned char>(p3 >> 6);
+        dst[4] = static_cast<unsigned char>(((p0 & 0x3F) << 2) | ((p1 & 0x30) >> 4));
+        dst[5] = static_cast<unsigned char>(((p1 & 0x0F) << 4) | ((p2 & 0x3C) >> 2));
+        dst[6] = static_cast<unsigned char>(((p2 & 0x03) << 6) | (p3 & 0x3F));
+        dst += 7;
+    }
+}
+
+static inline void pack_row_raw14(
+        const uint8_t* row, int pixelStride, int width, unsigned char* dst) {
+    const int groups = (width + 3) / 4;
+    pack_row_raw14_scalar(row, pixelStride, groups, dst);
+}
+
 
 extern "C" JNIEXPORT jbyteArray JNICALL
 Java_dev_rawrec_app_codec_RawPackNative_packMipi10(
@@ -315,6 +422,182 @@ Java_dev_rawrec_app_codec_RawPackNative_packMipi10CroppedDirect(
         return nullptr;
     }
     return res;
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_dev_rawrec_app_codec_RawPackNative_packMipi12DirectInto(
+        JNIEnv* env, jclass, jobject srcBuffer, jbyteArray dstArray,
+        jint rowStride, jint pixelStride, jint width, jint height) {
+    if (!dstArray) return JNI_FALSE;
+    auto* base = static_cast<uint8_t*>(env->GetDirectBufferAddress(srcBuffer));
+    if (!base) return JNI_FALSE;
+
+    const int groups = (width + 1) / 2;
+    const size_t outLen = static_cast<size_t>(groups) * 3 * height;
+    if (static_cast<size_t>(env->GetArrayLength(dstArray)) < outLen) return JNI_FALSE;
+
+    thread_local std::vector<unsigned char> tlPack12Buf;
+    if (tlPack12Buf.size() < outLen) {
+        tlPack12Buf.resize(outLen);
+    }
+    unsigned char* dst = tlPack12Buf.data();
+
+    const int midY = height / 2;
+    g_sliceWorker.dispatch([=]() {
+        for (int y = midY; y < height; ++y) {
+            const uint8_t* row = base + static_cast<size_t>(y) * rowStride;
+            pack_row_raw12(row, pixelStride, width, dst + static_cast<size_t>(y) * groups * 3);
+        }
+    });
+
+    for (int y = 0; y < midY; ++y) {
+        const uint8_t* row = base + static_cast<size_t>(y) * rowStride;
+        pack_row_raw12(row, pixelStride, width, dst + static_cast<size_t>(y) * groups * 3);
+    }
+
+    g_sliceWorker.wait();
+
+    env->SetByteArrayRegion(dstArray, 0, static_cast<jsize>(outLen),
+                            reinterpret_cast<const jbyte*>(dst));
+    return JNI_TRUE;
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_dev_rawrec_app_codec_RawPackNative_packMipi12CroppedDirectInto(
+        JNIEnv* env, jclass, jobject srcBuffer, jbyteArray dstArray,
+        jint rowStride, jint pixelStride,
+        jint cropLeft, jint cropTop, jint cropWidth, jint cropHeight) {
+    if (!dstArray || cropLeft < 0 || cropTop < 0 || cropWidth <= 0 || cropHeight <= 0) return JNI_FALSE;
+    auto* base = static_cast<uint8_t*>(env->GetDirectBufferAddress(srcBuffer));
+    if (!base) return JNI_FALSE;
+
+    const jlong cap = env->GetDirectBufferCapacity(srcBuffer);
+    if (cap > 0) {
+        const size_t maxOffset = static_cast<size_t>(cropTop + cropHeight - 1) * rowStride +
+                                 static_cast<size_t>(cropLeft + cropWidth) * pixelStride;
+        if (maxOffset > static_cast<size_t>(cap)) return JNI_FALSE;
+    }
+
+    const int groups = (cropWidth + 1) / 2;
+    const size_t outLen = static_cast<size_t>(groups) * 3 * cropHeight;
+    if (static_cast<size_t>(env->GetArrayLength(dstArray)) < outLen) return JNI_FALSE;
+
+    thread_local std::vector<unsigned char> tlCropped12Buf;
+    if (tlCropped12Buf.size() < outLen) {
+        tlCropped12Buf.resize(outLen);
+    }
+    unsigned char* dst = tlCropped12Buf.data();
+
+    const int midY = cropHeight / 2;
+    g_sliceWorker.dispatch([=]() {
+        for (int y = midY; y < cropHeight; ++y) {
+            const uint8_t* row = base +
+                    static_cast<size_t>(cropTop + y) * rowStride +
+                    static_cast<size_t>(cropLeft) * pixelStride;
+            pack_row_raw12(row, pixelStride, cropWidth, dst + static_cast<size_t>(y) * groups * 3);
+        }
+    });
+
+    for (int y = 0; y < midY; ++y) {
+        const uint8_t* row = base +
+                static_cast<size_t>(cropTop + y) * rowStride +
+                static_cast<size_t>(cropLeft) * pixelStride;
+        pack_row_raw12(row, pixelStride, cropWidth, dst + static_cast<size_t>(y) * groups * 3);
+    }
+
+    g_sliceWorker.wait();
+
+    env->SetByteArrayRegion(dstArray, 0, static_cast<jsize>(outLen),
+                            reinterpret_cast<const jbyte*>(dst));
+    return JNI_TRUE;
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_dev_rawrec_app_codec_RawPackNative_packMipi14DirectInto(
+        JNIEnv* env, jclass, jobject srcBuffer, jbyteArray dstArray,
+        jint rowStride, jint pixelStride, jint width, jint height) {
+    if (!dstArray) return JNI_FALSE;
+    auto* base = static_cast<uint8_t*>(env->GetDirectBufferAddress(srcBuffer));
+    if (!base) return JNI_FALSE;
+
+    const int groups = (width + 3) / 4;
+    const size_t outLen = static_cast<size_t>(groups) * 7 * height;
+    if (static_cast<size_t>(env->GetArrayLength(dstArray)) < outLen) return JNI_FALSE;
+
+    thread_local std::vector<unsigned char> tlPack14Buf;
+    if (tlPack14Buf.size() < outLen) {
+        tlPack14Buf.resize(outLen);
+    }
+    unsigned char* dst = tlPack14Buf.data();
+
+    const int midY = height / 2;
+    g_sliceWorker.dispatch([=]() {
+        for (int y = midY; y < height; ++y) {
+            const uint8_t* row = base + static_cast<size_t>(y) * rowStride;
+            pack_row_raw14(row, pixelStride, width, dst + static_cast<size_t>(y) * groups * 7);
+        }
+    });
+
+    for (int y = 0; y < midY; ++y) {
+        const uint8_t* row = base + static_cast<size_t>(y) * rowStride;
+        pack_row_raw14(row, pixelStride, width, dst + static_cast<size_t>(y) * groups * 7);
+    }
+
+    g_sliceWorker.wait();
+
+    env->SetByteArrayRegion(dstArray, 0, static_cast<jsize>(outLen),
+                            reinterpret_cast<const jbyte*>(dst));
+    return JNI_TRUE;
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_dev_rawrec_app_codec_RawPackNative_packMipi14CroppedDirectInto(
+        JNIEnv* env, jclass, jobject srcBuffer, jbyteArray dstArray,
+        jint rowStride, jint pixelStride,
+        jint cropLeft, jint cropTop, jint cropWidth, jint cropHeight) {
+    if (!dstArray || cropLeft < 0 || cropTop < 0 || cropWidth <= 0 || cropHeight <= 0) return JNI_FALSE;
+    auto* base = static_cast<uint8_t*>(env->GetDirectBufferAddress(srcBuffer));
+    if (!base) return JNI_FALSE;
+
+    const jlong cap = env->GetDirectBufferCapacity(srcBuffer);
+    if (cap > 0) {
+        const size_t maxOffset = static_cast<size_t>(cropTop + cropHeight - 1) * rowStride +
+                                 static_cast<size_t>(cropLeft + cropWidth) * pixelStride;
+        if (maxOffset > static_cast<size_t>(cap)) return JNI_FALSE;
+    }
+
+    const int groups = (cropWidth + 3) / 4;
+    const size_t outLen = static_cast<size_t>(groups) * 7 * cropHeight;
+    if (static_cast<size_t>(env->GetArrayLength(dstArray)) < outLen) return JNI_FALSE;
+
+    thread_local std::vector<unsigned char> tlCropped14Buf;
+    if (tlCropped14Buf.size() < outLen) {
+        tlCropped14Buf.resize(outLen);
+    }
+    unsigned char* dst = tlCropped14Buf.data();
+
+    const int midY = cropHeight / 2;
+    g_sliceWorker.dispatch([=]() {
+        for (int y = midY; y < cropHeight; ++y) {
+            const uint8_t* row = base +
+                    static_cast<size_t>(cropTop + y) * rowStride +
+                    static_cast<size_t>(cropLeft) * pixelStride;
+            pack_row_raw14(row, pixelStride, cropWidth, dst + static_cast<size_t>(y) * groups * 7);
+        }
+    });
+
+    for (int y = 0; y < midY; ++y) {
+        const uint8_t* row = base +
+                static_cast<size_t>(cropTop + y) * rowStride +
+                static_cast<size_t>(cropLeft) * pixelStride;
+        pack_row_raw14(row, pixelStride, cropWidth, dst + static_cast<size_t>(y) * groups * 7);
+    }
+
+    g_sliceWorker.wait();
+
+    env->SetByteArrayRegion(dstArray, 0, static_cast<jsize>(outLen),
+                            reinterpret_cast<const jbyte*>(dst));
+    return JNI_TRUE;
 }
 
 extern "C" JNIEXPORT jbyteArray JNICALL

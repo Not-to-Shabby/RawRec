@@ -132,6 +132,7 @@ class RecordingController(private val context: Context) {
 
     @Volatile private var quadCodes: IntArray = intArrayOf(0, 1, 1, 2)
     @Volatile private var sessionWhiteLevel = 1023
+    @Volatile private var sessionBitDepth = 10
     @Volatile private var proxyActive = false
     // Session context for thermal rescale (Tier 2): set at start(), cleared at stop().
     @Volatile private var lastStartedSize: Size? = null
@@ -357,9 +358,10 @@ class RecordingController(private val context: Context) {
             CameraCharacteristics.SENSOR_INFO_COLOR_FILTER_ARRANGEMENT
         ) ?: 0).coerceIn(0, 3)
         val bitDepth = bitDepthFromWhiteLevel(whiteLevel)
-        val canPack = packMipi10 && bitDepth == 10
+        val canPack = packMipi10 && (bitDepth == 10 || bitDepth == 12 || bitDepth == 14)
         val nativePack = canPack && RawPackNative.loaded
         sessionWhiteLevel = whiteLevel
+        sessionBitDepth = bitDepth
 
         // WYSIWYG framing crop: wide aspects store the same center band the
         // letterboxed viewfinder shows (software crop in the packer — never
@@ -509,11 +511,16 @@ class RecordingController(private val context: Context) {
         outbound = outQ
 
         val codec: FrameCodec = if (useZstd) ZstdFrameCodec(level = socTuning.zstdLevel, nbWorkers = INNER_ZSTD_WORKERS) else StoreCodec
-        val packing = if (canPack) Rvsp.PACKING_MIPI_PACKED else Rvsp.PACKING_EXPANDED_LSB
+        val packing = when {
+            !canPack -> Rvsp.PACKING_EXPANDED_LSB
+            bitDepth == 12 -> Rvsp.PACKING_MIPI_RAW12
+            bitDepth == 14 -> Rvsp.PACKING_MIPI_RAW14
+            else -> Rvsp.PACKING_MIPI_PACKED
+        }
         val compressWorkers = socTuning.recommendedCompressWorkers
         midQ = ArrayBlockingQueue(socTuning.recommendedQueueCapacities.midCapacity)
         payloadPool.clear()
-        val packedFrameSize = if (canPack) ((effW + 3) / 4) * 5 * effH else 0
+        val packedFrameSize = if (canPack) MipiPacker.packedSize(effW * effH, bitDepth) else 0
         if (packedFrameSize > 0) {
             val poolCapacity = socTuning.recommendedQueueCapacities.midCapacity + 3
             repeat(poolCapacity) {
@@ -879,73 +886,123 @@ class RecordingController(private val context: Context) {
                 val buf = plane.buffer
                 buf.position(0)
                 try {
-                    if (crop != null) {
-                        if (useProxy && proxyEncoder != null) {
-                            RawPackNative.packMipi10ProxyCroppedDirect(
-                                buf, plane.rowStride, plane.pixelStride,
-                                cropL, cropT, cropW, cropH,
-                                quadCodes, sessionWhiteLevel,
-                                PROXY_FACTOR, proxyY!!, proxyU!!, proxyV!!
-                            ) ?: (if (targetBuf != null && RawPackNative.packMipi10CroppedDirectInto(
-                                buf, targetBuf, plane.rowStride, plane.pixelStride,
-                                cropL, cropT, cropW, cropH
-                            )) targetBuf else RawPackNative.packMipi10CroppedDirect(
-                                buf, plane.rowStride, plane.pixelStride,
-                                cropL, cropT, cropW, cropH
-                            )) ?: RawPackNative.packMipi10(
-                                toBytes(buf), plane.rowStride, plane.pixelStride,
-                                size.width, size.height
-                            ).let { full ->
-                                // JVM last resort: pack full frame then cut the
-                                // packed rows for the crop band.
-                                MipiPacker.packCropped(
+                    when (sessionBitDepth) {
+                        12 -> {
+                            if (crop != null) {
+                                if (targetBuf != null && RawPackNative.packMipi12CroppedDirectInto(
+                                    buf, targetBuf, plane.rowStride, plane.pixelStride,
+                                    cropL, cropT, cropW, cropH
+                                )) targetBuf
+                                else MipiPacker.pack12(
                                     RawSampleReader.readU16LE(
                                         toBytes(buf), plane.rowStride, plane.pixelStride,
                                         size.width, size.height
-                                    ),
-                                    size.width, crop
-                                ) ?: full
+                                    )
+                                )
+                            } else {
+                                if (targetBuf != null && RawPackNative.packMipi12DirectInto(
+                                    buf, targetBuf, plane.rowStride, plane.pixelStride, size.width, size.height
+                                )) targetBuf
+                                else MipiPacker.pack12(
+                                    RawSampleReader.readU16LE(
+                                        toBytes(buf), plane.rowStride, plane.pixelStride,
+                                        size.width, size.height
+                                    )
+                                )
                             }
-                        } else {
-                            if (targetBuf != null && RawPackNative.packMipi10CroppedDirectInto(
-                                buf, targetBuf, plane.rowStride, plane.pixelStride,
-                                cropL, cropT, cropW, cropH
-                            )) targetBuf
-                            else RawPackNative.packMipi10CroppedDirect(
-                                buf, plane.rowStride, plane.pixelStride,
-                                cropL, cropT, cropW, cropH
-                            ) ?: MipiPacker.packCropped(
-                                RawSampleReader.readU16LE(
+                        }
+                        14 -> {
+                            if (crop != null) {
+                                if (targetBuf != null && RawPackNative.packMipi14CroppedDirectInto(
+                                    buf, targetBuf, plane.rowStride, plane.pixelStride,
+                                    cropL, cropT, cropW, cropH
+                                )) targetBuf
+                                else MipiPacker.pack14(
+                                    RawSampleReader.readU16LE(
+                                        toBytes(buf), plane.rowStride, plane.pixelStride,
+                                        size.width, size.height
+                                    )
+                                )
+                            } else {
+                                if (targetBuf != null && RawPackNative.packMipi14DirectInto(
+                                    buf, targetBuf, plane.rowStride, plane.pixelStride, size.width, size.height
+                                )) targetBuf
+                                else MipiPacker.pack14(
+                                    RawSampleReader.readU16LE(
+                                        toBytes(buf), plane.rowStride, plane.pixelStride,
+                                        size.width, size.height
+                                    )
+                                )
+                            }
+                        }
+                        else -> {
+                            if (crop != null) {
+                                if (useProxy && proxyEncoder != null) {
+                                    RawPackNative.packMipi10ProxyCroppedDirect(
+                                        buf, plane.rowStride, plane.pixelStride,
+                                        cropL, cropT, cropW, cropH,
+                                        quadCodes, sessionWhiteLevel,
+                                        PROXY_FACTOR, proxyY!!, proxyU!!, proxyV!!
+                                    ) ?: (if (targetBuf != null && RawPackNative.packMipi10CroppedDirectInto(
+                                        buf, targetBuf, plane.rowStride, plane.pixelStride,
+                                        cropL, cropT, cropW, cropH
+                                    )) targetBuf else RawPackNative.packMipi10CroppedDirect(
+                                        buf, plane.rowStride, plane.pixelStride,
+                                        cropL, cropT, cropW, cropH
+                                    )) ?: RawPackNative.packMipi10(
+                                        toBytes(buf), plane.rowStride, plane.pixelStride,
+                                        size.width, size.height
+                                    ).let { full ->
+                                        MipiPacker.packCropped(
+                                            RawSampleReader.readU16LE(
+                                                toBytes(buf), plane.rowStride, plane.pixelStride,
+                                                size.width, size.height
+                                            ),
+                                            size.width, crop
+                                        ) ?: full
+                                    }
+                                } else {
+                                    if (targetBuf != null && RawPackNative.packMipi10CroppedDirectInto(
+                                        buf, targetBuf, plane.rowStride, plane.pixelStride,
+                                        cropL, cropT, cropW, cropH
+                                    )) targetBuf
+                                    else RawPackNative.packMipi10CroppedDirect(
+                                        buf, plane.rowStride, plane.pixelStride,
+                                        cropL, cropT, cropW, cropH
+                                    ) ?: MipiPacker.packCropped(
+                                        RawSampleReader.readU16LE(
+                                            toBytes(buf), plane.rowStride, plane.pixelStride,
+                                            size.width, size.height
+                                        ),
+                                        size.width, crop
+                                    )
+                                }
+                            } else if (useProxy && proxyEncoder != null) {
+                                RawPackNative.packMipi10ProxyDirect(
+                                    buf, plane.rowStride, plane.pixelStride,
+                                    size.width, size.height, quadCodes, sessionWhiteLevel,
+                                    PROXY_FACTOR, proxyY!!, proxyU!!, proxyV!!
+                                ) ?: (if (targetBuf != null && RawPackNative.packMipi10DirectInto(
+                                    buf, targetBuf, plane.rowStride, plane.pixelStride, size.width, size.height
+                                )) targetBuf else RawPackNative.packMipi10Direct(
+                                    buf, plane.rowStride, plane.pixelStride,
+                                    size.width, size.height
+                                )) ?: RawPackNative.packMipi10(
                                     toBytes(buf), plane.rowStride, plane.pixelStride,
                                     size.width, size.height
-                                ),
-                                size.width, crop
-                            )
+                                )
+                            } else {
+                                if (targetBuf != null && RawPackNative.packMipi10DirectInto(
+                                    buf, targetBuf, plane.rowStride, plane.pixelStride, size.width, size.height
+                                )) targetBuf
+                                else RawPackNative.packMipi10Direct(
+                                    buf, plane.rowStride, plane.pixelStride, size.width, size.height
+                                ) ?: RawPackNative.packMipi10(
+                                    toBytes(buf), plane.rowStride, plane.pixelStride,
+                                    size.width, size.height
+                                )
+                            }
                         }
-                    } else if (useProxy && proxyEncoder != null) {
-                        RawPackNative.packMipi10ProxyDirect(
-                            buf, plane.rowStride, plane.pixelStride,
-                            size.width, size.height, quadCodes, sessionWhiteLevel,
-                            PROXY_FACTOR, proxyY!!, proxyU!!, proxyV!!
-                        ) ?: (if (targetBuf != null && RawPackNative.packMipi10DirectInto(
-                            buf, targetBuf, plane.rowStride, plane.pixelStride, size.width, size.height
-                        )) targetBuf else RawPackNative.packMipi10Direct(
-                            buf, plane.rowStride, plane.pixelStride,
-                            size.width, size.height
-                        )) ?: RawPackNative.packMipi10(
-                            toBytes(buf), plane.rowStride, plane.pixelStride,
-                            size.width, size.height
-                        )
-                    } else {
-                        if (targetBuf != null && RawPackNative.packMipi10DirectInto(
-                            buf, targetBuf, plane.rowStride, plane.pixelStride, size.width, size.height
-                        )) targetBuf
-                        else RawPackNative.packMipi10Direct(
-                            buf, plane.rowStride, plane.pixelStride, size.width, size.height
-                        ) ?: RawPackNative.packMipi10(
-                            toBytes(buf), plane.rowStride, plane.pixelStride,
-                            size.width, size.height
-                        )
                     }
                 } catch (e: IllegalStateException) {
                     RawPackNative.packMipi10(
@@ -959,8 +1016,11 @@ class RecordingController(private val context: Context) {
                     toBytes(plane.buffer), plane.rowStride, plane.pixelStride,
                     size.width, size.height
                 )
-                if (crop != null) MipiPacker.packCropped(samples, size.width, crop)
-                else MipiPacker.pack(samples)
+                when (sessionBitDepth) {
+                    12 -> MipiPacker.pack12(samples)
+                    14 -> MipiPacker.pack14(samples)
+                    else -> if (crop != null) MipiPacker.packCropped(samples, size.width, crop) else MipiPacker.pack(samples)
+                }
             }
             else -> {
                 // Expanded-LSB (no pack): cropped take falls back to full-frame

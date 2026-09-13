@@ -371,8 +371,12 @@ object Rvtool {
 
     fun decodedPayload(h: Header, payload: ByteArray): ByteArray {
         if (h.videoCodec != "ZSTD") return payload
-        val expectedRaw = if (h.packing == 1) (h.width * h.height / 4 * 5).toLong()
-        else h.width.toLong() * h.height * 2
+        val expectedRaw = when (h.packing) {
+            1 -> (h.width.toLong() * h.height / 4 * 5)
+            3 -> (h.width.toLong() * h.height / 2 * 3)
+            4 -> (h.width.toLong() * h.height / 4 * 7)
+            else -> h.width.toLong() * h.height * 2
+        }
         if (ZstdDesktop.available) {
             return ZstdDesktop.decompress(payload, expectedRaw)
         }
@@ -398,6 +402,34 @@ object Rvtool {
                     if (si + 2 < n) s[si + 2] = ((u(payload[di + 2]) shl 2) or ((b4 shr 2) and 3)).toShort()
                     if (si + 3 < n) s[si + 3] = ((u(payload[di + 3]) shl 2) or (b4 and 3)).toShort()
                     si += 4; di += 5
+                }
+                s
+            }
+            3 -> { // MIPI RAW12: 2 pixels in 3 bytes
+                val s = ShortArray(n)
+                var si = 0; var di = 0
+                while (si < n && di + 3 <= payload.size) {
+                    val b0 = u(payload[di])
+                    val b1 = u(payload[di + 1])
+                    val b2 = u(payload[di + 2])
+                    s[si] = ((b0 shl 4) or (b2 and 0x0F)).toShort()
+                    if (si + 1 < n) s[si + 1] = ((b1 shl 4) or ((b2 shr 4) and 0x0F)).toShort()
+                    si += 2; di += 3
+                }
+                s
+            }
+            4 -> { // MIPI RAW14: 4 pixels in 7 bytes
+                val s = ShortArray(n)
+                var si = 0; var di = 0
+                while (si < n && di + 7 <= payload.size) {
+                    val b0 = u(payload[di]); val b1 = u(payload[di + 1])
+                    val b2 = u(payload[di + 2]); val b3 = u(payload[di + 3])
+                    val b4 = u(payload[di + 4]); val b5 = u(payload[di + 5]); val b6 = u(payload[di + 6])
+                    s[si] = ((b0 shl 6) or (b4 shr 2)).toShort()
+                    if (si + 1 < n) s[si + 1] = ((b1 shl 6) or (((b4 and 3) shl 4) or (b5 shr 4))).toShort()
+                    if (si + 2 < n) s[si + 2] = ((b2 shl 6) or (((b5 and 0x0F) shl 2) or (b6 shr 6))).toShort()
+                    if (si + 3 < n) s[si + 3] = ((b3 shl 6) or (b6 and 0x3F)).toShort()
+                    si += 4; di += 7
                 }
                 s
             }

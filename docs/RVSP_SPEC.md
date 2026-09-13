@@ -57,7 +57,7 @@ The file begins with an immutable 512-byte header block starting at byte offset 
 | `40` | 4 | `uint32` | `height` | Active sensor frame height in pixels (e.g. `3072`). |
 | `44` | 1 | `uint8` | `bitDepth` | Native sensor ADC bit depth (e.g. `10`, `12`, `14`, `16`). |
 | `45` | 1 | `uint8` | `cfaPattern` | Color Filter Array Bayer pattern:<br>• `0`: `RGGB`<br>• `1`: `GRBG`<br>• `2`: `GBRG`<br>• `3`: `BGGR` |
-| `46` | 1 | `uint8` | `packing` | Bit-packing layout format:<br>• `0`: `EXPANDED_LSB` (16-bit LE per sample, right-aligned)<br>• `1`: `MIPI_PACKED` (MIPI CSI-2 RAW10, 4 pixels in 5 bytes)<br>• `2`: `EXPANDED_MSB` (16-bit LE per sample, left-aligned) |
+| `46` | 1 | `uint8` | `packing` | Bit-packing layout format:<br>• `0`: `EXPANDED_LSB` (16-bit LE per sample, right-aligned)<br>• `1`: `MIPI_PACKED` (MIPI CSI-2 RAW10, 4 pixels in 5 bytes)<br>• `2`: `EXPANDED_MSB` (16-bit LE per sample, left-aligned)<br>• `3`: `MIPI_RAW12` (MIPI CSI-2 RAW12, 2 pixels in 3 bytes)<br>• `4`: `MIPI_RAW14` (MIPI CSI-2 RAW14, 4 pixels in 7 bytes) |
 | `47` | 1 | `uint8` | `reserved` | Reserved byte (set to `0x00`). |
 | `48` | 4 | `uint32` | `whiteLevel` | Digital sensor saturation / clipping point (e.g. `1023` for 10-bit). |
 | `52` | 16 | `int32[4]` | `blackLevel` | Black level subtraction offsets in canonical **R, Gr, Gb, B** channel order (e.g. `[64, 64, 64, 64]`). |

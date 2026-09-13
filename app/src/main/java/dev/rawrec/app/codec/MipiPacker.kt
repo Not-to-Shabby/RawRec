@@ -6,7 +6,11 @@ object MipiPacker {
     private const val MASK = (1 shl BITS) - 1
     private const val GROUP = 4
 
-    fun packedSize(sampleCount: Int): Int = (sampleCount + GROUP - 1) / GROUP * 5
+    fun packedSize(sampleCount: Int, bitDepth: Int = 10): Int = when (bitDepth) {
+        12 -> (sampleCount + 1) / 2 * 3
+        14 -> (sampleCount + 3) / 4 * 7
+        else -> (sampleCount + GROUP - 1) / GROUP * 5
+    }
 
     /**
      * Largest centered crop of [aspect] (w/h) inside width x height, for
@@ -99,6 +103,88 @@ object MipiPacker {
             if (si + 3 < sampleCount) out[si + 3] = ((b3 shl 2) or (b4 and 0x3)).toShort()
             si += GROUP
             di += 5
+        }
+        return out
+    }
+
+    fun pack12(samples: ShortArray, sampleCount: Int = samples.size): ByteArray {
+        require(sampleCount >= 0 && sampleCount <= samples.size)
+        val out = ByteArray(packedSize(sampleCount, 12))
+        var si = 0
+        var di = 0
+        while (si < sampleCount) {
+            val p0 = samples[si].toInt() and 0x0FFF
+            val p1 = if (si + 1 < sampleCount) samples[si + 1].toInt() and 0x0FFF else 0
+            out[di] = ((p0 shr 4) and 0xFF).toByte()
+            out[di + 1] = ((p1 shr 4) and 0xFF).toByte()
+            out[di + 2] = (((p1 and 0x0F) shl 4) or (p0 and 0x0F)).toByte()
+            si += 2
+            di += 3
+        }
+        return out
+    }
+
+    fun unpack12(packed: ByteArray, sampleCount: Int): ShortArray {
+        require(sampleCount >= 0)
+        require(packed.size >= packedSize(sampleCount, 12)) { "packed buffer too small" }
+        val out = ShortArray(sampleCount)
+        var si = 0
+        var di = 0
+        while (si < sampleCount) {
+            val b0 = packed[di].toInt() and 0xFF
+            val b1 = packed[di + 1].toInt() and 0xFF
+            val b2 = packed[di + 2].toInt() and 0xFF
+            out[si] = ((b0 shl 4) or (b2 and 0x0F)).toShort()
+            if (si + 1 < sampleCount) out[si + 1] = ((b1 shl 4) or ((b2 shr 4) and 0x0F)).toShort()
+            si += 2
+            di += 3
+        }
+        return out
+    }
+
+    fun pack14(samples: ShortArray, sampleCount: Int = samples.size): ByteArray {
+        require(sampleCount >= 0 && sampleCount <= samples.size)
+        val out = ByteArray(packedSize(sampleCount, 14))
+        var si = 0
+        var di = 0
+        while (si < sampleCount) {
+            val p0 = samples[si].toInt() and 0x3FFF
+            val p1 = if (si + 1 < sampleCount) samples[si + 1].toInt() and 0x3FFF else 0
+            val p2 = if (si + 2 < sampleCount) samples[si + 2].toInt() and 0x3FFF else 0
+            val p3 = if (si + 3 < sampleCount) samples[si + 3].toInt() and 0x3FFF else 0
+            out[di] = ((p0 shr 6) and 0xFF).toByte()
+            out[di + 1] = ((p1 shr 6) and 0xFF).toByte()
+            out[di + 2] = ((p2 shr 6) and 0xFF).toByte()
+            out[di + 3] = ((p3 shr 6) and 0xFF).toByte()
+            out[di + 4] = (((p0 and 0x3F) shl 2) or ((p1 and 0x30) shr 4)).toByte()
+            out[di + 5] = (((p1 and 0x0F) shl 4) or ((p2 and 0x3C) shr 2)).toByte()
+            out[di + 6] = (((p2 and 0x03) shl 6) or (p3 and 0x3F)).toByte()
+            si += 4
+            di += 7
+        }
+        return out
+    }
+
+    fun unpack14(packed: ByteArray, sampleCount: Int): ShortArray {
+        require(sampleCount >= 0)
+        require(packed.size >= packedSize(sampleCount, 14)) { "packed buffer too small" }
+        val out = ShortArray(sampleCount)
+        var si = 0
+        var di = 0
+        while (si < sampleCount) {
+            val b0 = packed[di].toInt() and 0xFF
+            val b1 = packed[di + 1].toInt() and 0xFF
+            val b2 = packed[di + 2].toInt() and 0xFF
+            val b3 = packed[di + 3].toInt() and 0xFF
+            val b4 = packed[di + 4].toInt() and 0xFF
+            val b5 = packed[di + 5].toInt() and 0xFF
+            val b6 = packed[di + 6].toInt() and 0xFF
+            out[si] = ((b0 shl 6) or (b4 shr 2)).toShort()
+            if (si + 1 < sampleCount) out[si + 1] = ((b1 shl 6) or (((b4 and 3) shl 4) or (b5 shr 4))).toShort()
+            if (si + 2 < sampleCount) out[si + 2] = ((b2 shl 6) or (((b5 and 0x0F) shl 2) or (b6 shr 6))).toShort()
+            if (si + 3 < sampleCount) out[si + 3] = ((b3 shl 6) or (b6 and 0x3F)).toShort()
+            si += 4
+            di += 7
         }
         return out
     }

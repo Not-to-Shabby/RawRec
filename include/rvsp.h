@@ -27,7 +27,9 @@ enum class CfaPattern : uint8_t {
 enum class Packing : uint8_t {
     EXPANDED_LSB = 0,
     MIPI_PACKED = 1,
-    EXPANDED_MSB = 2
+    EXPANDED_MSB = 2,
+    MIPI_RAW12 = 3,
+    MIPI_RAW14 = 4
 };
 
 struct Header {
@@ -149,6 +151,54 @@ public:
             dst[di + 3] = static_cast<uint16_t>((b3 << 2) | (b4 & 0x03));
 
             si += 5;
+            di += 4;
+        }
+    }
+
+    /**
+     * Unpacks MIPI CSI-2 RAW12 bit-packed byte array into uint16 samples (2 pixels -> 3 bytes).
+     */
+    static void unpackMipi12(const uint8_t* src, size_t srcLen, uint16_t* dst, uint32_t width, uint32_t height) {
+        const size_t totalPixels = static_cast<size_t>(width) * height;
+        size_t si = 0;
+        size_t di = 0;
+
+        while (di + 2 <= totalPixels && si + 3 <= srcLen) {
+            const uint8_t b0 = src[si];
+            const uint8_t b1 = src[si + 1];
+            const uint8_t b2 = src[si + 2];
+
+            dst[di]     = static_cast<uint16_t>((b0 << 4) | (b2 & 0x0F));
+            dst[di + 1] = static_cast<uint16_t>((b1 << 4) | ((b2 >> 4) & 0x0F));
+
+            si += 3;
+            di += 2;
+        }
+    }
+
+    /**
+     * Unpacks MIPI CSI-2 RAW14 bit-packed byte array into uint16 samples (4 pixels -> 7 bytes).
+     */
+    static void unpackMipi14(const uint8_t* src, size_t srcLen, uint16_t* dst, uint32_t width, uint32_t height) {
+        const size_t totalPixels = static_cast<size_t>(width) * height;
+        size_t si = 0;
+        size_t di = 0;
+
+        while (di + 4 <= totalPixels && si + 7 <= srcLen) {
+            const uint8_t b0 = src[si];
+            const uint8_t b1 = src[si + 1];
+            const uint8_t b2 = src[si + 2];
+            const uint8_t b3 = src[si + 3];
+            const uint8_t b4 = src[si + 4];
+            const uint8_t b5 = src[si + 5];
+            const uint8_t b6 = src[si + 6];
+
+            dst[di]     = static_cast<uint16_t>((b0 << 6) | (b4 >> 2));
+            dst[di + 1] = static_cast<uint16_t>((b1 << 6) | (((b4 & 0x03) << 4) | (b5 >> 4)));
+            dst[di + 2] = static_cast<uint16_t>((b2 << 6) | (((b5 & 0x0F) << 2) | (b6 >> 6)));
+            dst[di + 3] = static_cast<uint16_t>((b3 << 6) | (b6 & 0x3F));
+
+            si += 7;
             di += 4;
         }
     }

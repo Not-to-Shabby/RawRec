@@ -80,7 +80,7 @@ class RvspHeader:
 
     @property
     def packing_name(self) -> str:
-        names = {0: "EXPANDED_LSB", 1: "MIPI_PACKED", 2: "EXPANDED_MSB"}
+        names = {0: "EXPANDED_LSB", 1: "MIPI_PACKED", 2: "EXPANDED_MSB", 3: "MIPI_RAW12", 4: "MIPI_RAW14"}
         return names.get(self.packing, f"CUSTOM_{self.packing}")
 
 
@@ -223,6 +223,81 @@ def unpack_mipi10(packed_bytes: bytes, width: int, height: int):
         return out[:total_pixels]
 
 
+def unpack_mipi12(packed_bytes: bytes, width: int, height: int):
+    """
+    Unpacks MIPI CSI-2 RAW12 bit-packed byte array into uint16 samples (2 pixels -> 3 bytes).
+    """
+    total_pixels = width * height
+    num_groups = (total_pixels + 1) // 2
+    src_len = len(packed_bytes)
+
+    if HAVE_NUMPY:
+        usable_groups = min(num_groups, src_len // 3)
+        arr = np.frombuffer(packed_bytes[:usable_groups * 3], dtype=np.uint8).reshape(-1, 3)
+        b0 = arr[:, 0].astype(np.uint16)
+        b1 = arr[:, 1].astype(np.uint16)
+        b2 = arr[:, 2].astype(np.uint16)
+
+        p0 = (b0 << 4) | (b2 & 0x0F)
+        p1 = (b1 << 4) | ((b2 >> 4) & 0x0F)
+        out = np.column_stack((p0, p1)).reshape(-1)
+        if len(out) > total_pixels:
+            out = out[:total_pixels]
+        return out.reshape((height, width))
+    else:
+        out = []
+        si = 0
+        while si + 3 <= src_len and len(out) < total_pixels:
+            b0 = packed_bytes[si]
+            b1 = packed_bytes[si + 1]
+            b2 = packed_bytes[si + 2]
+            out.append((b0 << 4) | (b2 & 0x0F))
+            out.append((b1 << 4) | ((b2 >> 4) & 0x0F))
+            si += 3
+        return out[:total_pixels]
+
+
+def unpack_mipi14(packed_bytes: bytes, width: int, height: int):
+    """
+    Unpacks MIPI CSI-2 RAW14 bit-packed byte array into uint16 samples (4 pixels -> 7 bytes).
+    """
+    total_pixels = width * height
+    num_groups = (total_pixels + 3) // 4
+    src_len = len(packed_bytes)
+
+    if HAVE_NUMPY:
+        usable_groups = min(num_groups, src_len // 7)
+        arr = np.frombuffer(packed_bytes[:usable_groups * 7], dtype=np.uint8).reshape(-1, 7)
+        b0 = arr[:, 0].astype(np.uint16)
+        b1 = arr[:, 1].astype(np.uint16)
+        b2 = arr[:, 2].astype(np.uint16)
+        b3 = arr[:, 3].astype(np.uint16)
+        b4 = arr[:, 4].astype(np.uint16)
+        b5 = arr[:, 5].astype(np.uint16)
+        b6 = arr[:, 6].astype(np.uint16)
+
+        p0 = (b0 << 6) | (b4 >> 2)
+        p1 = (b1 << 6) | (((b4 & 0x03) << 4) | (b5 >> 4))
+        p2 = (b2 << 6) | (((b5 & 0x0F) << 2) | (b6 >> 6))
+        p3 = (b3 << 6) | (b6 & 0x3F)
+        out = np.column_stack((p0, p1, p2, p3)).reshape(-1)
+        if len(out) > total_pixels:
+            out = out[:total_pixels]
+        return out.reshape((height, width))
+    else:
+        out = []
+        si = 0
+        while si + 7 <= src_len and len(out) < total_pixels:
+            b0 = packed_bytes[si]; b1 = packed_bytes[si + 1]; b2 = packed_bytes[si + 2]; b3 = packed_bytes[si + 3]
+            b4 = packed_bytes[si + 4]; b5 = packed_bytes[si + 5]; b6 = packed_bytes[si + 6]
+            out.append((b0 << 6) | (b4 >> 2))
+            out.append((b1 << 6) | (((b4 & 0x03) << 4) | (b5 >> 4)))
+            out.append((b2 << 6) | (((b5 & 0x0F) << 2) | (b6 >> 6)))
+            out.append((b3 << 6) | (b6 & 0x3F))
+            si += 7
+        return out[:total_pixels]
+
+
 def write_wav(out_path: str, audio_pcm: bytes, sample_rate: int = 48000, channels: int = 2, bits_per_sample: int = 16):
     total_bytes = len(audio_pcm)
     byte_rate = sample_rate * channels * bits_per_sample // 8
@@ -292,7 +367,25 @@ def cmd_dump_frame(args):
                     f.write(samples.astype(np.uint16).tobytes())
                 else:
                     f.write(struct.pack(f"<{len(samples)}H", *samples))
-            print(f"Dumped frame {idx} ({h.width}x{h.height} 16-bit raw) -> {out_path}")
+            print(f"Dumped frame {idx} ({h.width}x{h.height} 10-bit MIPI unpacked raw) -> {out_path}")
+        elif h.packing == 3:
+            samples = unpack_mipi12(decoded, h.width, h.height)
+            out_path = args.out or f"frame_{idx:06d}.raw"
+            with open(out_path, "wb") as f:
+                if HAVE_NUMPY and isinstance(samples, np.ndarray):
+                    f.write(samples.astype(np.uint16).tobytes())
+                else:
+                    f.write(struct.pack(f"<{len(samples)}H", *samples))
+            print(f"Dumped frame {idx} ({h.width}x{h.height} 12-bit MIPI unpacked raw) -> {out_path}")
+        elif h.packing == 4:
+            samples = unpack_mipi14(decoded, h.width, h.height)
+            out_path = args.out or f"frame_{idx:06d}.raw"
+            with open(out_path, "wb") as f:
+                if HAVE_NUMPY and isinstance(samples, np.ndarray):
+                    f.write(samples.astype(np.uint16).tobytes())
+                else:
+                    f.write(struct.pack(f"<{len(samples)}H", *samples))
+            print(f"Dumped frame {idx} ({h.width}x{h.height} 14-bit MIPI unpacked raw) -> {out_path}")
         else:
             out_path = args.out or f"frame_{idx:06d}.bin"
             with open(out_path, "wb") as f:

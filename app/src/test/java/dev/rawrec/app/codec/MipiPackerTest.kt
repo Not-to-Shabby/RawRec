@@ -30,6 +30,26 @@ class MipiPackerTest {
     }
 
     @Test
+    fun `pack12 then unpack12 is identity`() {
+        val rng = Random(42)
+        val n = 1024
+        val samples = ShortArray(n) { rng.nextInt(4096).toShort() }
+        val packed = MipiPacker.pack12(samples)
+        assertEquals(MipiPacker.packedSize(n, 12), packed.size)
+        assertArrayEquals(samples, MipiPacker.unpack12(packed, n))
+    }
+
+    @Test
+    fun `pack14 then unpack14 is identity`() {
+        val rng = Random(84)
+        val n = 1024
+        val samples = ShortArray(n) { rng.nextInt(16384).toShort() }
+        val packed = MipiPacker.pack14(samples)
+        assertEquals(MipiPacker.packedSize(n, 14), packed.size)
+        assertArrayEquals(samples, MipiPacker.unpack14(packed, n))
+    }
+
+    @Test
     fun `pack then unpack handles remainder pixels`() {
         for (n in listOf(1, 2, 3, 5, 6, 7, 9, 13)) {
             val samples = random10Bit(n, n.toLong())
