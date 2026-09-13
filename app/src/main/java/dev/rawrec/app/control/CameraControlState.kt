@@ -13,6 +13,9 @@ data class CameraControlState(
     val whiteBalanceTint: Int = 0,
     val autoWhiteBalance: Boolean = true,
     val targetFps: Double = 30.0,
+    val focusPointA: Float? = null,
+    val focusPointB: Float? = null,
+    val rackDurationMs: Long = 1200L,
     /**
      * Viewfinder framing mode: 0 Full, 1 Widescreen (2.39:1), 2 16:9, 3 4:3, 4 1:1.
      * Shared state like ISO/shutter — the recording honors it (WYSIWYG:

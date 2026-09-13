@@ -116,11 +116,14 @@ class AppPreferences(
         whiteBalanceTint = prefs.getInt("pref_wb_tint", 0),
         autoWhiteBalance = prefs.getBoolean("pref_auto_wb", true),
         targetFps = prefs.getFloat("pref_target_fps", 30f).toDouble(),
+        focusPointA = if (prefs.contains("pref_focus_point_a")) prefs.getFloat("pref_focus_point_a", 0f) else null,
+        focusPointB = if (prefs.contains("pref_focus_point_b")) prefs.getFloat("pref_focus_point_b", 0f) else null,
+        rackDurationMs = prefs.getLong("pref_rack_duration_ms", 1200L),
         aspectIndex = prefs.getInt("pref_aspect_index", 0)
     )
 
     fun saveCameraControlState(state: CameraControlState) {
-        prefs.edit()
+        val editor = prefs.edit()
             .putInt("pref_iso", state.iso)
             .putBoolean("pref_auto_iso", state.autoIso)
             .putLong("pref_exposure_ns", state.exposureNs)
@@ -134,6 +137,14 @@ class AppPreferences(
             .putBoolean("pref_auto_wb", state.autoWhiteBalance)
             .putFloat("pref_target_fps", state.targetFps.toFloat())
             .putInt("pref_aspect_index", state.aspectIndex)
-            .apply()
+            .putLong("pref_rack_duration_ms", state.rackDurationMs)
+
+        if (state.focusPointA != null) editor.putFloat("pref_focus_point_a", state.focusPointA)
+        else editor.remove("pref_focus_point_a")
+
+        if (state.focusPointB != null) editor.putFloat("pref_focus_point_b", state.focusPointB)
+        else editor.remove("pref_focus_point_b")
+
+        editor.apply()
     }
 }

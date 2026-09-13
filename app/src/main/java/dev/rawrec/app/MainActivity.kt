@@ -483,6 +483,25 @@ fun RawRecApp() {
                                 if (f.exists()) runCatching { dev.rawrec.tool.CubeLut.parse(f) }.getOrNull() else null
                             } else null
                         }
+                        "set_focus_mark" -> {
+                            val mark = intent.getStringExtra("mark") ?: "A"
+                            val d = intent.getFloatExtra("val", cameraControls.focusDiopters).coerceIn(0f, 10f)
+                            cameraControls = if (mark.equals("B", ignoreCase = true)) {
+                                cameraControls.copy(focusPointB = d)
+                            } else {
+                                cameraControls.copy(focusPointA = d)
+                            }
+                            prefs.saveCameraControlState(cameraControls)
+                        }
+                        "rack_focus" -> {
+                            val target = intent.getStringExtra("target") ?: "A"
+                            val targetDiopters = if (target.equals("B", ignoreCase = true)) cameraControls.focusPointB else cameraControls.focusPointA
+                            if (targetDiopters != null) {
+                                cameraControls = cameraControls.copy(focusDiopters = targetDiopters, autoFocus = false)
+                                controller.updateControls(cameraControls)
+                                prefs.saveCameraControlState(cameraControls)
+                            }
+                        }
                     }
                 }
             }

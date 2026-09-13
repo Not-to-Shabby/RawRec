@@ -825,8 +825,20 @@ fun CinemaViewfinderScreen(
                 CinemaFocusRail(
                     currentDiopters = controls.focusDiopters,
                     autoFocus = controls.autoFocus,
+                    focusPointA = controls.focusPointA,
+                    focusPointB = controls.focusPointB,
+                    rackDurationMs = controls.rackDurationMs,
                     onFocusChanged = { d, af ->
                         onControlsChanged(controls.copy(focusDiopters = d, autoFocus = af))
+                    },
+                    onSetPointA = { pA ->
+                        onControlsChanged(controls.copy(focusPointA = pA))
+                    },
+                    onSetPointB = { pB ->
+                        onControlsChanged(controls.copy(focusPointB = pB))
+                    },
+                    onSetRackDuration = { dur ->
+                        onControlsChanged(controls.copy(rackDurationMs = dur))
                     },
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -967,8 +979,20 @@ fun CinemaViewfinderScreen(
                 CinemaFocusRail(
                     currentDiopters = controls.focusDiopters,
                     autoFocus = controls.autoFocus,
+                    focusPointA = controls.focusPointA,
+                    focusPointB = controls.focusPointB,
+                    rackDurationMs = controls.rackDurationMs,
                     onFocusChanged = { d, af ->
                         onControlsChanged(controls.copy(focusDiopters = d, autoFocus = af))
+                    },
+                    onSetPointA = { pA ->
+                        onControlsChanged(controls.copy(focusPointA = pA))
+                    },
+                    onSetPointB = { pB ->
+                        onControlsChanged(controls.copy(focusPointB = pB))
+                    },
+                    onSetRackDuration = { dur ->
+                        onControlsChanged(controls.copy(rackDurationMs = dur))
                     }
                 )
             }
