@@ -198,7 +198,12 @@ fun CinemaViewfinderScreen(
         }
     }
 
-    Box(modifier = modifier.fillMaxSize().background(Color.Black)) {
+    val rootModifier = if (vfBackend == dev.rawrec.app.util.AppPreferences.ViewfinderBackend.OPENGL_ES) {
+        modifier.fillMaxSize()
+    } else {
+        modifier.fillMaxSize().background(Color.Black)
+    }
+    Box(modifier = rootModifier) {
 
         // Fixed-orientation viewfinder: feed never rotates, only UI chrome does.
         // Aspect mode controls real letterboxing/masking, not just overlay lines.
@@ -325,8 +330,18 @@ fun CinemaViewfinderScreen(
         }
 
         if (vfBackend == dev.rawrec.app.util.AppPreferences.ViewfinderBackend.OPENGL_ES) {
+            val glBufSize = remember(supportedPreviewSizes, rawAspect) {
+                chooseBufferSize(supportedPreviewSizes, rawAspect)
+            }
+            LaunchedEffect(glBufSize) {
+                vfBufW = glBufSize.width
+                vfBufH = glBufSize.height
+                vfRotation = 0
+            }
             dev.rawrec.app.ui.gl.GlViewfinder(
                 modifier = Modifier.fillMaxSize(),
+                bufferWidth = glBufSize.width,
+                bufferHeight = glBufSize.height,
                 rawAspect = rawAspect,
                 activeLut = activeLut,
                 peakingActive = peakingActive,

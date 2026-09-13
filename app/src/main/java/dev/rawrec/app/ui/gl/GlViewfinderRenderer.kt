@@ -24,6 +24,8 @@ import javax.microedition.khronos.opengles.GL10
  *    False Color (IRE luma ramp), and animated high-exposure Zebras.
  */
 class GlViewfinderRenderer(
+    private var bufferWidth: Int = 960,
+    private var bufferHeight: Int = 720,
     private val onPreviewSurfaceAvailable: (Surface) -> Unit
 ) : GLSurfaceView.Renderer, SurfaceTexture.OnFrameAvailableListener {
 
@@ -37,7 +39,9 @@ class GlViewfinderRenderer(
     private var lutTextureId: Int = 0
     private var programId: Int = 0
 
-    private val stMatrix = FloatArray(16)
+    private val stMatrix = FloatArray(16).also {
+        android.opengl.Matrix.setIdentityM(it, 0)
+    }
     @Volatile private var frameAvailable = false
 
     private val vao = IntArray(1)
@@ -78,6 +82,12 @@ class GlViewfinderRenderer(
         glSurfaceView?.requestRender()
     }
 
+    fun updateBufferSize(w: Int, h: Int) {
+        bufferWidth = w.coerceAtLeast(1)
+        bufferHeight = h.coerceAtLeast(1)
+        surfaceTexture?.setDefaultBufferSize(bufferWidth, bufferHeight)
+    }
+
     override fun onSurfaceCreated(gl: GL10?, config: EGLConfig?) {
         AppLog.i(tag, "onSurfaceCreated GLES30: ${GLES30.glGetString(GLES30.GL_VERSION)}")
 
@@ -94,6 +104,7 @@ class GlViewfinderRenderer(
 
         // Build SurfaceTexture and notify camera engine
         val st = SurfaceTexture(oesTextureId)
+        st.setDefaultBufferSize(bufferWidth, bufferHeight)
         st.setOnFrameAvailableListener(this)
         surfaceTexture = st
         val surf = Surface(st)

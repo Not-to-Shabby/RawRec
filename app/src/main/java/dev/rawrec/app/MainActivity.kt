@@ -1010,10 +1010,16 @@ private fun SettingsScreen(
                     SettingSwitch("Zstd compression", recUseZstd, !stats.active) {
                         onRecordConfigChange(it, recPackMipi, recMicOn, recProxyOn)
                     }
+                    val packLabel = when (camSel?.whiteLevel ?: 1023) {
+                        in 0..1023 -> "MIPI RAW10 packing"
+                        in 1024..4095 -> "MIPI RAW12 packing"
+                        in 4096..16383 -> "MIPI RAW14 packing"
+                        else -> "MIPI RAW packing"
+                    }
                     SettingSwitch(
-                        "MIPI-10 packing",
+                        packLabel,
                         recPackMipi,
-                        !stats.active && (camSel?.whiteLevel ?: 0) <= 1023
+                        !stats.active && (camSel?.whiteLevel ?: 0) <= 16383
                     ) { onRecordConfigChange(recUseZstd, it, recMicOn, recProxyOn) }
                     SettingSwitch("Microphone", recMicOn, !stats.active) {
                         onRecordConfigChange(recUseZstd, recPackMipi, it, recProxyOn)
@@ -1492,11 +1498,17 @@ private fun loadInspect(file: File, wantIndex: Int): InspectResult {
         }
         val rec = chosen ?: error("file has fewer than ${wantIndex + 1} frames")
         val w = h.width; val hh = h.height; val n = w * hh
-        val packed = h.packing == dev.rawrec.app.container.Rvsp.PACKING_MIPI_PACKED
-        val expectedRaw = if (packed) MipiPacker.packedSize(n).toLong() else n * 2L
+        val packed = h.packing == dev.rawrec.app.container.Rvsp.PACKING_MIPI_PACKED ||
+                     h.packing == dev.rawrec.app.container.Rvsp.PACKING_MIPI_RAW12 ||
+                     h.packing == dev.rawrec.app.container.Rvsp.PACKING_MIPI_RAW14
+        val expectedRaw = if (packed) MipiPacker.packedSize(n, h.bitDepth).toLong() else n * 2L
         val raw = FrameCodecs.byId(h.videoCodec).decode(rec.payload, expectedRaw)
-        val samples = if (packed) MipiPacker.unpack(raw, n)
-        else RawSampleReader.readU16LE(raw, w * 2, 2, w, hh)
+        val samples = when (h.packing) {
+            dev.rawrec.app.container.Rvsp.PACKING_MIPI_RAW12 -> MipiPacker.unpack12(raw, n)
+            dev.rawrec.app.container.Rvsp.PACKING_MIPI_RAW14 -> MipiPacker.unpack14(raw, n)
+            dev.rawrec.app.container.Rvsp.PACKING_MIPI_PACKED -> MipiPacker.unpack(raw, n)
+            else -> RawSampleReader.readU16LE(raw, w * 2, 2, w, hh)
+        }
 
         val diag = FrameInspector.diagnose(samples, w, hh, h.cfaPattern, h.whiteLevel)
         val blackAvg = h.blackLevel.average().toInt()

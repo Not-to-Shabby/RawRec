@@ -26,6 +26,8 @@ import dev.rawrec.tool.CubeLut
 @Composable
 fun GlViewfinder(
     modifier: Modifier = Modifier,
+    bufferWidth: Int = 960,
+    bufferHeight: Int = 720,
     rawAspect: Double = 4.0 / 3.0,
     activeLut: CubeLut? = null,
     peakingActive: Boolean = false,
@@ -35,7 +37,11 @@ fun GlViewfinder(
     overlay: @Composable androidx.compose.foundation.layout.BoxScope.() -> Unit = {}
 ) {
     val context = LocalContext.current
-    val renderer = remember { GlViewfinderRenderer(onPreviewSurfaceAvailable) }
+    val renderer = remember { GlViewfinderRenderer(bufferWidth, bufferHeight, onPreviewSurfaceAvailable) }
+
+    LaunchedEffect(bufferWidth, bufferHeight) {
+        renderer.updateBufferSize(bufferWidth, bufferHeight)
+    }
 
     LaunchedEffect(activeLut) {
         renderer.setLut(activeLut)
@@ -71,7 +77,9 @@ fun GlViewfinder(
                 factory = { ctx ->
                     GLSurfaceView(ctx).apply {
                         setEGLContextClientVersion(3)
-                        setEGLConfigChooser(8, 8, 8, 8, 0, 0)
+                        setEGLConfigChooser(8, 8, 8, 8, 16, 0)
+                        setZOrderMediaOverlay(true)
+                        holder.setFormat(android.graphics.PixelFormat.TRANSLUCENT)
                         renderer.attachView(this)
                         setRenderer(renderer)
                         renderMode = GLSurfaceView.RENDERMODE_CONTINUOUSLY
