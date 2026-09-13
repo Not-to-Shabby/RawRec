@@ -510,7 +510,8 @@ class RecordingController(private val context: Context) {
         inbound = inQ
         outbound = outQ
 
-        val codec: FrameCodec = if (useZstd) ZstdFrameCodec(level = socTuning.zstdLevel, nbWorkers = INNER_ZSTD_WORKERS) else StoreCodec
+        val winLog = if (prefs.cacheOptimization) 17 else 0
+        val codec: FrameCodec = if (useZstd) ZstdFrameCodec(level = socTuning.zstdLevel, nbWorkers = INNER_ZSTD_WORKERS, windowLog = winLog) else StoreCodec
         val packing = when {
             !canPack -> Rvsp.PACKING_EXPANDED_LSB
             bitDepth == 12 -> Rvsp.PACKING_MIPI_RAW12

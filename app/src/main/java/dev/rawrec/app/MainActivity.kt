@@ -130,6 +130,7 @@ fun RawRecApp() {
     var recPackMipi by remember { mutableStateOf(prefs.packMipi) }
     var recMicOn by remember { mutableStateOf(prefs.micOn) }
     var recProxyOn by remember { mutableStateOf(prefs.proxyOn) }
+    var recCacheOpt by remember { mutableStateOf(prefs.cacheOptimization) }
     var previewSurface by remember { mutableStateOf<android.view.Surface?>(null) }
     var settingsOpen by remember { mutableStateOf(false) }
     var galleryOpen by remember { mutableStateOf(false) }
@@ -502,6 +503,11 @@ fun RawRecApp() {
                                 prefs.saveCameraControlState(cameraControls)
                             }
                         }
+                        "set_cache_opt" -> {
+                            val on = intent.getIntExtra("val", 1) != 0
+                            recCacheOpt = on
+                            prefs.cacheOptimization = on
+                        }
                     }
                 }
             }
@@ -656,6 +662,11 @@ fun RawRecApp() {
                                 recMicOn = mic; recProxyOn = proxy
                                 prefs.useZstd = zstd; prefs.packMipi = pack
                                 prefs.micOn = mic; prefs.proxyOn = proxy
+                            },
+                            recCacheOpt = recCacheOpt,
+                            onCacheOptChange = {
+                                recCacheOpt = it
+                                prefs.cacheOptimization = it
                             },
                             vfRotationOverride = vfRotationOverride,
                             onVfRotationOverride = { vfRotationOverride = it },
@@ -882,7 +893,9 @@ private fun SettingsScreen(
     recPackMipi: Boolean = true,
     recMicOn: Boolean = false,
     recProxyOn: Boolean = false,
+    recCacheOpt: Boolean = true,
     onRecordConfigChange: (Boolean, Boolean, Boolean, Boolean) -> Unit = {_,_,_,_ ->},
+    onCacheOptChange: (Boolean) -> Unit = {},
     recCamSel: CamInfo? = null,
     recSizeSel: Size? = null,
     onSourceChange: (CamInfo?, Size?) -> Unit = { _, _ -> },
@@ -1048,6 +1061,19 @@ private fun SettingsScreen(
                         recProxyOn,
                         !stats.active && recPackMipi
                     ) { onRecordConfigChange(recUseZstd, recPackMipi, recMicOn, it) }
+                    SettingSwitch(
+                        "Hardware Cache Optimization",
+                        recCacheOpt,
+                        !stats.active
+                    ) { onCacheOptChange(it) }
+                    Text(
+                        if (recCacheOpt)
+                            "L2 Cache Bounded (128KB) + L1 SIMD hardware prefetch: max compression throughput."
+                        else
+                            "Standard baseline: Zstandard default memory window (1MB–8MB).",
+                        style = dev.rawrec.app.ui.theme.TelemetryStyle,
+                        color = MaterialTheme.colorScheme.primary
+                    )
                 }
             }
         }

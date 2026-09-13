@@ -149,6 +149,7 @@ static inline void pack_row(
         int x = 0;
         // 16-sample vector steps (4 groups -> 20 bytes).
         for (; x + 16 <= width; x += 16, dst += 20) {
+            __builtin_prefetch(src + x + 64, 0, 3);
             pack16_neon(src + x, dst);
         }
         // Scalar tail (a 4096-wide row = exactly 256 steps, no tail; crops
@@ -228,6 +229,7 @@ static inline void pack_row_raw12(
         const uint16_t* src = reinterpret_cast<const uint16_t*>(row);
         int x = 0;
         for (; x + 16 <= width; x += 16, dst += 24) {
+            __builtin_prefetch(src + x + 64, 0, 3);
             pack16_neon_raw12(src + x, dst);
         }
         for (; x < width; x += 2, dst += 3) {

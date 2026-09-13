@@ -103,6 +103,10 @@ class AppPreferences(
         get() = prefs.getString("pref_active_lut_path", null)
         set(value) = prefs.edit().putString("pref_active_lut_path", value).apply()
 
+    var cacheOptimization: Boolean
+        get() = prefs.getBoolean("pref_cache_optimization", true)
+        set(value) = prefs.edit().putBoolean("pref_cache_optimization", value).apply()
+
     fun loadCameraControlState(): CameraControlState = CameraControlState(
         iso = prefs.getInt("pref_iso", 100),
         autoIso = prefs.getBoolean("pref_auto_iso", false),
