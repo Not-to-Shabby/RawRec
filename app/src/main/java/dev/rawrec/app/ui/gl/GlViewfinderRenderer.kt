@@ -55,11 +55,19 @@ class GlViewfinderRenderer(
     // Orientation & Aspect Scaling
     @Volatile var rotation: Int = 0
     @Volatile var rawAspect: Double = 4.0 / 3.0
+    @Volatile var fillFraction: Float = 0f
+    @Volatile var stretchMode: Boolean = false
 
-    // Scope controls
+    // Scope controls & Histogram readback
     @Volatile var peakingActive: Boolean = false
     @Volatile var falseColorActive: Boolean = false
     @Volatile var zebrasActive: Boolean = false
+    @Volatile var histogramActive: Boolean = false
+    @Volatile var onPixelsRead: ((IntArray) -> Unit)? = null
+
+    private var lastHistSampleMs = 0L
+    private var histByteBuffer: ByteBuffer? = null
+    private var histPixelsArray: IntArray? = null
 
     // 3D LUT State
     @Volatile private var pendingLut: CubeLut? = null
@@ -240,17 +248,23 @@ class GlViewfinderRenderer(
         GLES30.glUniform1i(uLut3DLoc, 1)
         GLES30.glUniform1i(uUseLutLoc, if (lutApplied && lutTextureId != 0) 1 else 0)
 
-        // Calculate square-pixel aspect ratio scaling to prevent squashing
-        val contentAspect = if (rotation == 90 || rotation == 270) rawAspect else (1.0 / rawAspect)
-        val screenAspect = viewWidth.toDouble() / viewHeight.toDouble()
-        val scaleX: Float
-        val scaleY: Float
-        if (contentAspect >= screenAspect) {
-            scaleX = 1.0f
-            scaleY = (screenAspect / contentAspect).toFloat()
+        // Calculate square-pixel aspect ratio scaling & continuous presentation zoom
+        val vw = viewWidth.toFloat()
+        val vh = viewHeight.toFloat()
+        val bw = bufferWidth.toFloat()
+        val bh = bufferHeight.toFloat()
+        val (scaleX, scaleY) = if (stretchMode) {
+            val scales = dev.rawrec.app.ui.ViewfinderMath.stretchAxisScales(vw, vh, bw, bh, fillFraction, rotation)
+            val rotated = rotation == 90 || rotation == 270
+            val screenW = if (rotated) bh * scales[1] else bw * scales[0]
+            val screenH = if (rotated) bw * scales[0] else bh * scales[1]
+            (screenW / vw) to (screenH / vh)
         } else {
-            scaleX = (contentAspect / screenAspect).toFloat()
-            scaleY = 1.0f
+            val k = dev.rawrec.app.ui.ViewfinderMath.presentationScale(vw, vh, bw, bh, fillFraction, rotation)
+            val rotated = rotation == 90 || rotation == 270
+            val screenW = if (rotated) k * bh else k * bw
+            val screenH = if (rotated) k * bw else k * bh
+            (screenW / vw) to (screenH / vh)
         }
 
         // Pass Uniforms
@@ -270,6 +284,22 @@ class GlViewfinderRenderer(
         GLES30.glBindVertexArray(vao[0])
         GLES30.glDrawArrays(GLES30.GL_TRIANGLE_STRIP, 0, 4)
         GLES30.glBindVertexArray(0)
+
+        // Optional 10 FPS thumbnail readback for real-time Histogram scope in UI
+        if (histogramActive && (SystemClock.uptimeMillis() - lastHistSampleMs >= 100L)) {
+            lastHistSampleMs = SystemClock.uptimeMillis()
+            val rx = ((viewWidth - 240) / 2).coerceAtLeast(0)
+            val ry = ((viewHeight - 180) / 2).coerceAtLeast(0)
+            val rw = 240.coerceAtMost(viewWidth)
+            val rh = 180.coerceAtMost(viewHeight)
+            val pBuf = histByteBuffer ?: ByteBuffer.allocateDirect(240 * 180 * 4)
+                .order(ByteOrder.nativeOrder()).also { histByteBuffer = it }
+            pBuf.clear()
+            GLES30.glReadPixels(rx, ry, rw, rh, GLES30.GL_RGBA, GLES30.GL_UNSIGNED_BYTE, pBuf)
+            val arr = histPixelsArray ?: IntArray(240 * 180).also { histPixelsArray = it }
+            pBuf.asIntBuffer().get(arr, 0, rw * rh)
+            onPixelsRead?.invoke(arr)
+        }
 
         // Reset active texture back to Unit 0
         GLES30.glActiveTexture(GLES30.GL_TEXTURE0)

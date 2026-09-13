@@ -30,10 +30,14 @@ fun GlViewfinder(
     bufferHeight: Int = 720,
     rawAspect: Double = 4.0 / 3.0,
     rotation: Int = 0,
+    fillFraction: Float = 0f,
+    stretchMode: Boolean = false,
     activeLut: CubeLut? = null,
     peakingActive: Boolean = false,
     falseColorActive: Boolean = false,
     zebrasActive: Boolean = false,
+    histogramActive: Boolean = false,
+    onPixelsRead: ((IntArray) -> Unit)? = null,
     onPreviewSurfaceAvailable: (Surface) -> Unit,
     overlay: @Composable androidx.compose.foundation.layout.BoxScope.() -> Unit = {}
 ) {
@@ -44,19 +48,23 @@ fun GlViewfinder(
         renderer.updateBufferSize(bufferWidth, bufferHeight)
     }
 
-    LaunchedEffect(rotation, rawAspect) {
+    LaunchedEffect(rotation, rawAspect, fillFraction, stretchMode) {
         renderer.rotation = rotation
         renderer.rawAspect = rawAspect
+        renderer.fillFraction = fillFraction
+        renderer.stretchMode = stretchMode
     }
 
     LaunchedEffect(activeLut) {
         renderer.setLut(activeLut)
     }
 
-    LaunchedEffect(peakingActive, falseColorActive, zebrasActive) {
+    LaunchedEffect(peakingActive, falseColorActive, zebrasActive, histogramActive) {
         renderer.peakingActive = peakingActive
         renderer.falseColorActive = falseColorActive
         renderer.zebrasActive = zebrasActive
+        renderer.histogramActive = histogramActive
+        renderer.onPixelsRead = onPixelsRead
     }
 
     BoxWithConstraints(

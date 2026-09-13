@@ -100,6 +100,37 @@ class ScopeAnalyzer(
         }
     }
 
+    /**
+     * Called from GlViewfinderRenderer with GPU-readback ARGB pixels to compute live histogram.
+     */
+    fun onPixelsAvailable(
+        srcPixels: IntArray,
+        histogramActive: Boolean
+    ) {
+        if (!histogramActive) {
+            if (_histogram.value != null) _histogram.value = null
+            return
+        }
+
+        val now = System.currentTimeMillis()
+        if (now - lastSampleTimeMs < 100L) return
+        if (isProcessing.get()) return
+
+        lastSampleTimeMs = now
+        System.arraycopy(srcPixels, 0, pixels, 0, minOf(srcPixels.size, pixels.size))
+
+        isProcessing.set(true)
+        activeJob?.cancel()
+        activeJob = scope.launch {
+            try {
+                val hist = CinemaScopes.computeHistogram(pixels, sampleStep = 1)
+                _histogram.value = hist
+            } finally {
+                isProcessing.set(false)
+            }
+        }
+    }
+
     private fun processFrame(
         histogramActive: Boolean,
         peakingActive: Boolean,

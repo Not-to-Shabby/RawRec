@@ -345,10 +345,16 @@ fun CinemaViewfinderScreen(
                 bufferHeight = glBufSize.height,
                 rawAspect = rawAspect,
                 rotation = r,
+                fillFraction = fillFraction,
+                stretchMode = stretchMode,
                 activeLut = activeLut,
                 peakingActive = peakingActive,
                 falseColorActive = falseColorActive,
                 zebrasActive = zebrasActive,
+                histogramActive = histogramActive,
+                onPixelsRead = { pixels ->
+                    scopeAnalyzer.onPixelsAvailable(pixels, histogramActive)
+                },
                 onPreviewSurfaceAvailable = { surface ->
                     onPreviewSurfaceAvailable?.invoke(surface)
                 },
