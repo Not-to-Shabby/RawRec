@@ -69,25 +69,20 @@ fun GlViewfinder(
             targetW = maxH * aspect
         }
 
-        Box(
-            modifier = Modifier.size(targetW.dp, targetH.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            AndroidView(
-                factory = { ctx ->
-                    GLSurfaceView(ctx).apply {
-                        setEGLContextClientVersion(3)
-                        setEGLConfigChooser(8, 8, 8, 8, 16, 0)
-                        setZOrderMediaOverlay(true)
-                        holder.setFormat(android.graphics.PixelFormat.TRANSLUCENT)
-                        renderer.attachView(this)
-                        setRenderer(renderer)
-                        renderMode = GLSurfaceView.RENDERMODE_CONTINUOUSLY
-                    }
-                },
-                modifier = Modifier.fillMaxSize()
-            )
-        }
+        AndroidView(
+            factory = { ctx ->
+                GLSurfaceView(ctx).apply {
+                    setEGLContextClientVersion(3)
+                    setEGLConfigChooser(8, 8, 8, 8, 16, 0)
+                    setZOrderMediaOverlay(true)
+                    holder.setFormat(android.graphics.PixelFormat.TRANSLUCENT)
+                    renderer.attachView(this)
+                    setRenderer(renderer)
+                    renderMode = GLSurfaceView.RENDERMODE_CONTINUOUSLY
+                }
+            },
+            modifier = Modifier.fillMaxSize()
+        )
 
         // Overlay layer (framing outline, lookaround scrim, gridlines)
         overlay()

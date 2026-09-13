@@ -37,6 +37,7 @@ class GlViewfinderRenderer(
 
     private var oesTextureId: Int = 0
     private var lutTextureId: Int = 0
+    private var dummy3dTexId: Int = 0
     private var programId: Int = 0
 
     private val stMatrix = FloatArray(16).also {
@@ -102,14 +103,19 @@ class GlViewfinderRenderer(
         GLES30.glTexParameteri(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES30.GL_TEXTURE_WRAP_S, GLES30.GL_CLAMP_TO_EDGE)
         GLES30.glTexParameteri(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES30.GL_TEXTURE_WRAP_T, GLES30.GL_CLAMP_TO_EDGE)
 
+        GLES30.glClearColor(0.0f, 0.0f, 0.0f, 0.0f)
+
         // Build SurfaceTexture and notify camera engine
         val st = SurfaceTexture(oesTextureId)
         st.setDefaultBufferSize(bufferWidth, bufferHeight)
-        st.setOnFrameAvailableListener(this)
+        val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
+        st.setOnFrameAvailableListener(this, mainHandler)
         surfaceTexture = st
         val surf = Surface(st)
         previewSurface = surf
-        onPreviewSurfaceAvailable(surf)
+        mainHandler.post {
+            onPreviewSurfaceAvailable(surf)
+        }
 
         // Build Shader Program
         programId = createProgram(VERTEX_SHADER, FRAGMENT_SHADER)
@@ -127,6 +133,22 @@ class GlViewfinderRenderer(
         uZebrasActiveLoc = GLES30.glGetUniformLocation(programId, "uZebrasActive")
         uOesTexLoc = GLES30.glGetUniformLocation(programId, "uOesTex")
         uLut3DLoc = GLES30.glGetUniformLocation(programId, "uLut3D")
+
+        // Bind permanent texture units to prevent sampler conflict (GL_INVALID_OPERATION 0x502)
+        GLES30.glUseProgram(programId)
+        GLES30.glUniform1i(uOesTexLoc, 0)
+        GLES30.glUniform1i(uLut3DLoc, 1)
+
+        // Generate a 1x1x1 neutral 3D texture for Unit 1 so sampler3D is never unbound or defaulted to Unit 0
+        val dummyLut = IntArray(1)
+        GLES30.glGenTextures(1, dummyLut, 0)
+        dummy3dTexId = dummyLut[0]
+        GLES30.glBindTexture(GLES30.GL_TEXTURE_3D, dummy3dTexId)
+        GLES30.glTexParameteri(GLES30.GL_TEXTURE_3D, GLES30.GL_TEXTURE_MIN_FILTER, GLES30.GL_NEAREST)
+        GLES30.glTexParameteri(GLES30.GL_TEXTURE_3D, GLES30.GL_TEXTURE_MAG_FILTER, GLES30.GL_NEAREST)
+        val dummyPixel = FloatBuffer.wrap(floatArrayOf(1.0f, 1.0f, 1.0f))
+        GLES30.glTexImage3D(GLES30.GL_TEXTURE_3D, 0, GLES30.GL_RGB16F, 1, 1, 1, 0, GLES30.GL_RGB, GLES30.GL_FLOAT, dummyPixel)
+        GLES30.glBindTexture(GLES30.GL_TEXTURE_3D, 0)
 
         // Setup Fullscreen Quad: pos.xy, tex.uv
         val quadData = floatArrayOf(
@@ -175,10 +197,19 @@ class GlViewfinderRenderer(
 
     override fun onDrawFrame(gl: GL10?) {
         val st = surfaceTexture ?: return
+
+        // Explicitly bind OES texture unit 0 before updateTexImage
+        GLES30.glActiveTexture(GLES30.GL_TEXTURE0)
+        GLES30.glBindTexture(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, oesTextureId)
+
         synchronized(this) {
             if (frameAvailable) {
-                st.updateTexImage()
-                st.getTransformMatrix(stMatrix)
+                try {
+                    st.updateTexImage()
+                    st.getTransformMatrix(stMatrix)
+                } catch (e: Exception) {
+                    AppLog.w(tag, "updateTexImage error: ${e.message}")
+                }
                 frameAvailable = false
             }
         }
@@ -194,15 +225,12 @@ class GlViewfinderRenderer(
         GLES30.glBindTexture(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, oesTextureId)
         GLES30.glUniform1i(uOesTexLoc, 0)
 
-        // Bind 3D LUT Texture to Unit 1
-        if (lutApplied && lutTextureId != 0) {
-            GLES30.glActiveTexture(GLES30.GL_TEXTURE1)
-            GLES30.glBindTexture(GLES30.GL_TEXTURE_3D, lutTextureId)
-            GLES30.glUniform1i(uLut3DLoc, 1)
-            GLES30.glUniform1i(uUseLutLoc, 1)
-        } else {
-            GLES30.glUniform1i(uUseLutLoc, 0)
-        }
+        // Bind 3D LUT Texture to Unit 1 (always bound, never pointing to Unit 0)
+        GLES30.glActiveTexture(GLES30.GL_TEXTURE1)
+        val active3d = if (lutApplied && lutTextureId != 0) lutTextureId else dummy3dTexId
+        GLES30.glBindTexture(GLES30.GL_TEXTURE_3D, active3d)
+        GLES30.glUniform1i(uLut3DLoc, 1)
+        GLES30.glUniform1i(uUseLutLoc, if (lutApplied && lutTextureId != 0) 1 else 0)
 
         // Pass Uniforms
         GLES30.glUniformMatrix4fv(uSTMatrixLoc, 1, false, stMatrix, 0)
@@ -219,6 +247,9 @@ class GlViewfinderRenderer(
         GLES30.glBindVertexArray(vao[0])
         GLES30.glDrawArrays(GLES30.GL_TRIANGLE_STRIP, 0, 4)
         GLES30.glBindVertexArray(0)
+
+        // Reset active texture back to Unit 0
+        GLES30.glActiveTexture(GLES30.GL_TEXTURE0)
     }
 
     private fun checkPendingLut() {
@@ -293,6 +324,10 @@ class GlViewfinderRenderer(
         previewSurface?.release()
         previewSurface = null
         deleteLut3D()
+        if (dummy3dTexId != 0) {
+            GLES30.glDeleteTextures(1, intArrayOf(dummy3dTexId), 0)
+            dummy3dTexId = 0
+        }
         if (oesTextureId != 0) {
             GLES30.glDeleteTextures(1, intArrayOf(oesTextureId), 0)
             oesTextureId = 0
