@@ -88,6 +88,21 @@ class AppPreferences(
         get() = prefs.getString("pref_custom_storage_path", null)
         set(value) = prefs.edit().putString("pref_custom_storage_path", value).apply()
 
+    enum class ViewfinderBackend(val label: String, val description: String) {
+        TEXTURE_VIEW("TextureView", "Standard AOSP presentation with CPU scope analysis"),
+        OPENGL_ES("OpenGL ES 3.0", "Direct GPU preview with live 3D LUT and hardware shaders")
+    }
+
+    var vfBackend: ViewfinderBackend
+        get() = runCatching {
+            ViewfinderBackend.valueOf(prefs.getString("pref_vf_backend", ViewfinderBackend.TEXTURE_VIEW.name)!!)
+        }.getOrDefault(ViewfinderBackend.TEXTURE_VIEW)
+        set(value) = prefs.edit().putString("pref_vf_backend", value.name).apply()
+
+    var activeLutPath: String?
+        get() = prefs.getString("pref_active_lut_path", null)
+        set(value) = prefs.edit().putString("pref_active_lut_path", value).apply()
+
     fun loadCameraControlState(): CameraControlState = CameraControlState(
         iso = prefs.getInt("pref_iso", 100),
         autoIso = prefs.getBoolean("pref_auto_iso", false),

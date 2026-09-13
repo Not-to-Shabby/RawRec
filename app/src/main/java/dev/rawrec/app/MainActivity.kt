@@ -155,6 +155,17 @@ fun RawRecApp() {
     var displayRotationDeg by remember { mutableStateOf(0) }
     // Our OWN rotation engine: ui rotation driven by accelerometer (activity locked to portrait)
     var uiRotation by remember { mutableStateOf(0) }
+    // Viewfinder rendering backend and live 3D LUT
+    var vfBackend by remember { mutableStateOf(prefs.vfBackend) }
+    var activeLut by remember { mutableStateOf<dev.rawrec.tool.CubeLut?>(null) }
+
+    LaunchedEffect(prefs.activeLutPath) {
+        val path = prefs.activeLutPath
+        activeLut = if (path != null) {
+            val f = java.io.File(path)
+            if (f.exists()) runCatching { dev.rawrec.tool.CubeLut.parse(f) }.getOrNull() else null
+        } else null
+    }
 
     // Dynamic Activity requestedOrientation based on selected OrientationMode (fixed locked orientations, never spinning with gyro)
     LaunchedEffect(vfOrientationMode) {
@@ -453,6 +464,25 @@ fun RawRecApp() {
                             val path = intent.getStringExtra("path")
                             prefs.customStoragePath = if (path.isNullOrBlank() || path == "default" || path == "internal") null else path
                         }
+                        "set_vf_backend" -> {
+                            val backendStr = intent.getStringExtra("val") ?: ""
+                            val backend = if (backendStr.contains("gles", ignoreCase = true) || backendStr.contains("gl", ignoreCase = true)) {
+                                dev.rawrec.app.util.AppPreferences.ViewfinderBackend.OPENGL_ES
+                            } else {
+                                dev.rawrec.app.util.AppPreferences.ViewfinderBackend.TEXTURE_VIEW
+                            }
+                            vfBackend = backend
+                            prefs.vfBackend = backend
+                        }
+                        "set_vf_lut" -> {
+                            val path = intent.getStringExtra("path")
+                            val newPath = if (path.isNullOrBlank() || path == "none" || path == "clear") null else path
+                            prefs.activeLutPath = newPath
+                            activeLut = if (newPath != null) {
+                                val f = java.io.File(newPath)
+                                if (f.exists()) runCatching { dev.rawrec.tool.CubeLut.parse(f) }.getOrNull() else null
+                            } else null
+                        }
                     }
                 }
             }
@@ -509,6 +539,8 @@ fun RawRecApp() {
                 fillFraction = vfFillFraction,
                 stretchMode = vfStretch,
                 autoDisableVfSeconds = autoDisableVfSeconds,
+                vfBackend = vfBackend,
+                activeLut = activeLut,
                 rawAspect = recSizeSel?.let { it.width.toDouble() / it.height } ?: (4.0 / 3.0),
                 selectedRawSize = recSizeSel,
                 availableRawSizes = recCamSel?.rawSizes.orEmpty(),
@@ -641,6 +673,15 @@ fun RawRecApp() {
                                 recCamSel = cam; recSizeSel = size
                                 prefs.cameraId = cam?.id
                                 prefs.rawSize = size
+                            },
+                            vfBackend = vfBackend,
+                            onVfBackendChange = {
+                                vfBackend = it
+                                prefs.vfBackend = it
+                            },
+                            activeLutPath = prefs.activeLutPath,
+                            onActiveLutPathChange = {
+                                prefs.activeLutPath = it
                             },
                             vfTelemetry = vfTelemetry,
                             deviceOrientation = deviceOrientation,
@@ -838,6 +879,10 @@ private fun SettingsScreen(
     onStretchChange: (Boolean) -> Unit = {},
     autoDisableVfSeconds: Int = 0,
     onAutoDisableVfSecondsChange: (Int) -> Unit = {},
+    vfBackend: dev.rawrec.app.util.AppPreferences.ViewfinderBackend = dev.rawrec.app.util.AppPreferences.ViewfinderBackend.TEXTURE_VIEW,
+    onVfBackendChange: (dev.rawrec.app.util.AppPreferences.ViewfinderBackend) -> Unit = {},
+    activeLutPath: String? = null,
+    onActiveLutPathChange: (String?) -> Unit = {},
     vfTelemetry: String = "viewfinder: idle",
     deviceOrientation: String = "unknown",
     displayRotationName: String = "unknown",
@@ -1066,15 +1111,35 @@ private fun SettingsScreen(
 
         item {
             StaggeredAppear(index = 4) {
-                dev.rawrec.app.ui.components.SectionCard(
-                    title = "Viewfinder & Orientation",
-                    icon = RawRecIcons.Probe
-                ) {
-                    Text(
-                        "Orientation Architecture:",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
+	                dev.rawrec.app.ui.components.SectionCard(
+	                    title = "Viewfinder & Orientation",
+	                    icon = RawRecIcons.Probe
+	                ) {
+	                    Text(
+	                        "Viewfinder Pipeline Engine:",
+	                        style = MaterialTheme.typography.labelMedium,
+	                        color = MaterialTheme.colorScheme.onSurface
+	                    )
+	                    dev.rawrec.app.ui.components.ChoiceChipRow(
+	                        options = dev.rawrec.app.util.AppPreferences.ViewfinderBackend.values().map { it.label },
+	                        selected = { it == vfBackend.label },
+	                        onSelect = { label ->
+	                            val b = dev.rawrec.app.util.AppPreferences.ViewfinderBackend.values().firstOrNull { it.label == label }
+	                            if (b != null) onVfBackendChange(b)
+	                        }
+	                    )
+	                    Text(
+	                        vfBackend.description,
+	                        style = dev.rawrec.app.ui.theme.TelemetryStyle,
+	                        color = MaterialTheme.colorScheme.primary
+	                    )
+
+	                    Spacer(Modifier.height(6.dp))
+	                    Text(
+	                        "Orientation Architecture:",
+	                        style = MaterialTheme.typography.labelMedium,
+	                        color = MaterialTheme.colorScheme.onSurface
+	                    )
                     dev.rawrec.app.ui.components.ChoiceChipRow(
                         options = dev.rawrec.app.ui.ViewfinderMath.OrientationMode.values().map { it.label },
                         selected = { it == vfOrientationMode.label },

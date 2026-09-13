@@ -137,6 +137,8 @@ fun CinemaViewfinderScreen(
     onCameraSelected: ((dev.rawrec.app.probe.CamInfo) -> Unit)? = null,
     onRawSizeSelected: ((android.util.Size) -> Unit)? = null,
     onTelemetry: ((Int, Int, Int, Int, Int) -> Unit)? = null,
+    vfBackend: dev.rawrec.app.util.AppPreferences.ViewfinderBackend = dev.rawrec.app.util.AppPreferences.ViewfinderBackend.TEXTURE_VIEW,
+    activeLut: dev.rawrec.tool.CubeLut? = null,
     modifier: Modifier = Modifier
 ) {
     var activePanel by remember { mutableStateOf(ActivePanel.NONE) }
@@ -212,106 +214,67 @@ fun CinemaViewfinderScreen(
             fillFraction >= 0.5f -> ViewfinderMath.ScaleMode.FILL
             else -> ViewfinderMath.ScaleMode.FIT
         }
-        FixedViewfinder(
-            modifier = Modifier.fillMaxSize(),
-            supportedPreviewSizes = supportedPreviewSizes,
-            sensorOrientation = sensorOrientation,
-            scaleMode = scaleMode,
-            fillFraction = fillFraction,
-            aspectLimit = null, // Viewfinder displays full sensor frame so lookaround area is visible
-            rotationOverride = rotationOverride,
-            uiRotation = uiRotation,
-            orientationMode = orientationMode,
-            rawAspect = rawAspect,
-            onPreviewSurfaceAvailable = onPreviewSurfaceAvailable,
-            onStateChanged = { sensorO, dispR, angle, bufW, bufH ->
-                vfBufW = bufW; vfBufH = bufH
-                vfRotation = angle
-                onTelemetry?.invoke(sensorO, dispR, angle, bufW, bufH)
-            },
-            onFrameUpdated = { tv ->
-                if (!isVfSleeping) {
-                    scopeAnalyzer.onFrameAvailable(
-                        tv = tv,
-                        histogramActive = histogramActive,
-                        peakingActive = peakingActive,
-                        falseColorActive = falseColorActive,
-                        zebrasActive = zebrasActive
-                    )
-                }
-            },
-            overlay = {
-                Canvas(modifier = Modifier.fillMaxSize()) {
-                    val w = size.width
-                    val h = size.height
-                    val line = Color(0xDDFFFFFF)
-                    val scrim = Color.Black.copy(alpha = 0.55f)
+        val overlayContent: @Composable androidx.compose.foundation.layout.BoxScope.() -> Unit = {
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                val w = size.width
+                val h = size.height
+                val line = Color(0xDDFFFFFF)
+                val scrim = Color.Black.copy(alpha = 0.55f)
 
-                    if (vfBufW > 0 && vfBufH > 0) {
-                        val bw = vfBufW.toFloat()
-                        val bh = vfBufH.toFloat()
-                        val isLandscape = w > h || uiRotation == 90 || uiRotation == 270
+                if (vfBufW > 0 && vfBufH > 0) {
+                    val bw = vfBufW.toFloat()
+                    val bh = vfBufH.toFloat()
+                    val isLandscape = w > h || uiRotation == 90 || uiRotation == 270
 
-                        val activeRect: FloatArray
-                        var overlayW: Float
-                        var overlayH: Float
-                        var overlayLeft: Float
-                        var overlayTop: Float
-                        if (stretchMode) {
-                            // Anamorphic fill: slider (fillFraction) interpolates per-axis
-                            // scales from square-pixel FIT to edge-to-edge stretch. No crop
-                            // at any position — the whole frame deforms progressively.
-                            // The transform stretches the FULL buffer (FixedViewfinder gets
-                            // aspectLimit = null); scales must match it exactly.
-                            // stretchAxisScales is BUFFER-axis indexed (sx → buffer-x, sy →
-                            // buffer-y); at 90/270 feed rotation the buffer axes render
-                            // swapped on screen, so the on-screen rect dims transpose.
-                            val rotated = vfRotation == 90 || vfRotation == 270
-                            val scales = ViewfinderMath.stretchAxisScales(
-                                w, h, bw, bh, fillFraction, vfRotation
-                            )
-                            // Framing outline = the recorded WYSIWYG band under the same
-                            // stretch: band dims (buffer space) × per-axis scales, centered.
-                            val (bandW, bandH) = ViewfinderMath.effectiveCrop(bw, bh, aspectRatioLimit)
-                            val bandScreenW = if (rotated) bandH * scales[1] else bandW * scales[0]
-                            val bandScreenH = if (rotated) bandW * scales[0] else bandH * scales[1]
-                            activeRect = floatArrayOf(
-                                (w - bandScreenW) / 2f,
-                                (h - bandScreenH) / 2f,
-                                (w + bandScreenW) / 2f,
-                                (h + bandScreenH) / 2f
-                            )
-                            // Scope overlay bitmap = full preview buffer content on screen
-                            // (dst rect is pre-rotation; the rotate() below maps it on screen).
-                            overlayW = bw * scales[0]
-                            overlayH = bh * scales[1]
-                            overlayLeft = (w - overlayW) / 2f
-                            overlayTop = (h - overlayH) / 2f
-                        } else {
-                            val k = ViewfinderMath.presentationScale(w, h, bw, bh, fillFraction, vfRotation)
-                            activeRect = ViewfinderMath.activeFramingRect(
-                                viewW = w,
-                                viewH = h,
-                                bufW = bw,
-                                bufH = bh,
-                                aspectLimit = aspectRatioLimit,
-                                k = k,
-                                fillFraction = fillFraction,
-                                isLandscape = isLandscape,
-                                rotation = vfRotation
-                            )
-                            overlayW = k * bw
-                            overlayH = k * bh
-                            overlayLeft = (w - overlayW) / 2f
-                            overlayTop = (h - overlayH) / 2f
-                        }
+                    val activeRect: FloatArray
+                    var overlayW: Float
+                    var overlayH: Float
+                    var overlayLeft: Float
+                    var overlayTop: Float
+                    if (stretchMode) {
+                        val rotated = vfRotation == 90 || vfRotation == 270
+                        val scales = ViewfinderMath.stretchAxisScales(
+                            w, h, bw, bh, fillFraction, vfRotation
+                        )
+                        val (bandW, bandH) = ViewfinderMath.effectiveCrop(bw, bh, aspectRatioLimit)
+                        val bandScreenW = if (rotated) bandH * scales[1] else bandW * scales[0]
+                        val bandScreenH = if (rotated) bandW * scales[0] else bandH * scales[1]
+                        activeRect = floatArrayOf(
+                            (w - bandScreenW) / 2f,
+                            (h - bandScreenH) / 2f,
+                            (w + bandScreenW) / 2f,
+                            (h + bandScreenH) / 2f
+                        )
+                        overlayW = bw * scales[0]
+                        overlayH = bh * scales[1]
+                        overlayLeft = (w - overlayW) / 2f
+                        overlayTop = (h - overlayH) / 2f
+                    } else {
+                        val k = ViewfinderMath.presentationScale(w, h, bw, bh, fillFraction, vfRotation)
+                        activeRect = ViewfinderMath.activeFramingRect(
+                            viewW = w,
+                            viewH = h,
+                            bufW = bw,
+                            bufH = bh,
+                            aspectLimit = aspectRatioLimit,
+                            k = k,
+                            fillFraction = fillFraction,
+                            isLandscape = isLandscape,
+                            rotation = vfRotation
+                        )
+                        overlayW = k * bw
+                        overlayH = k * bh
+                        overlayLeft = (w - overlayW) / 2f
+                        overlayTop = (h - overlayH) / 2f
+                    }
 
-                        val left = activeRect[0]
-                        val top = activeRect[1]
-                        val right = activeRect[2]
-                        val bottom = activeRect[3]
+                    val left = activeRect[0]
+                    val top = activeRect[1]
+                    val right = activeRect[2]
+                    val bottom = activeRect[3]
 
-                        // Draw live scope overlays (False Color, Zebras, Focus Peaking) matching viewfinder orientation
+                    // Draw live scope overlays (False Color, Zebras, Focus Peaking) matching viewfinder orientation (TextureView mode only)
+                    if (vfBackend == dev.rawrec.app.util.AppPreferences.ViewfinderBackend.TEXTURE_VIEW) {
                         val overlayImg = liveOverlay
                         if (overlayImg != null) {
                             clipRect(left = left, top = top, right = right, bottom = bottom) {
@@ -325,54 +288,87 @@ fun CinemaViewfinderScreen(
                                 }
                             }
                         }
-
-                        // For framed aspect ratios (2.39:1, 16:9, 1:1), draw the Cinema Lookaround Scrim (55% dimmed)
-                        if (controls.aspectIndex in 1..4 && aspectRatioLimit != null) {
-                            // Top scrim
-                            if (top > 0f) {
-                                drawRect(scrim, Offset(0f, 0f), Size(w, top))
-                            }
-                            // Bottom scrim
-                            if (bottom < h) {
-                                drawRect(scrim, Offset(0f, bottom), Size(w, h - bottom))
-                            }
-                            // Left scrim
-                            if (left > 0f) {
-                                drawRect(scrim, Offset(0f, top), Size(left, bottom - top))
-                            }
-                            // Right scrim
-                            if (right < w) {
-                                drawRect(scrim, Offset(right, top), Size(w - right, bottom - top))
-                            }
-
-                            // Crisp 2px framing boundary outline around the active recording window
-                            drawRect(
-                                line,
-                                Offset(left, top),
-                                Size(right - left, bottom - top),
-                                style = Stroke(2f)
-                            )
-                        }
-
-                        // Rule-of-thirds gridlines strictly within the active recording window
-                        if (gridActive) {
-                            val grid = Color(0x66FFFFFF)
-                            val iw = right - left
-                            val ih = bottom - top
-                            drawLine(grid, Offset(left + iw / 3f, top), Offset(left + iw / 3f, bottom), strokeWidth = 1.5f)
-                            drawLine(grid, Offset(left + 2f * iw / 3f, top), Offset(left + 2f * iw / 3f, bottom), strokeWidth = 1.5f)
-                            drawLine(grid, Offset(left, top + ih / 3f), Offset(right, top + ih / 3f), strokeWidth = 1.5f)
-                            drawLine(grid, Offset(left, top + 2f * ih / 3f), Offset(right, top + 2f * ih / 3f), strokeWidth = 1.5f)
-                        }
-
-                        val cx = (left + right) / 2f
-                        val cy = (top + bottom) / 2f
-                        drawLine(Color(0x88FFFFFF), Offset(cx - 16f, cy), Offset(cx + 16f, cy), strokeWidth = 2f)
-                        drawLine(Color(0x88FFFFFF), Offset(cx, cy - 16f), Offset(cx, cy + 16f), strokeWidth = 2f)
                     }
+
+                    // For framed aspect ratios (2.39:1, 16:9, 1:1), draw the Cinema Lookaround Scrim (55% dimmed)
+                    if (controls.aspectIndex in 1..4 && aspectRatioLimit != null) {
+                        if (top > 0f) drawRect(scrim, Offset(0f, 0f), Size(w, top))
+                        if (bottom < h) drawRect(scrim, Offset(0f, bottom), Size(w, h - bottom))
+                        if (left > 0f) drawRect(scrim, Offset(0f, top), Size(left, bottom - top))
+                        if (right < w) drawRect(scrim, Offset(right, top), Size(w - right, bottom - top))
+
+                        drawRect(
+                            line,
+                            Offset(left, top),
+                            Size(right - left, bottom - top),
+                            style = Stroke(2f)
+                        )
+                    }
+
+                    // Rule-of-thirds gridlines strictly within the active recording window
+                    if (gridActive) {
+                        val grid = Color(0x66FFFFFF)
+                        val iw = right - left
+                        val ih = bottom - top
+                        drawLine(grid, Offset(left + iw / 3f, top), Offset(left + iw / 3f, bottom), strokeWidth = 1.5f)
+                        drawLine(grid, Offset(left + 2f * iw / 3f, top), Offset(left + 2f * iw / 3f, bottom), strokeWidth = 1.5f)
+                        drawLine(grid, Offset(left, top + ih / 3f), Offset(right, top + ih / 3f), strokeWidth = 1.5f)
+                        drawLine(grid, Offset(left, top + 2f * ih / 3f), Offset(right, top + 2f * ih / 3f), strokeWidth = 1.5f)
+                    }
+
+                    val cx = (left + right) / 2f
+                    val cy = (top + bottom) / 2f
+                    drawLine(Color(0x88FFFFFF), Offset(cx - 16f, cy), Offset(cx + 16f, cy), strokeWidth = 2f)
+                    drawLine(Color(0x88FFFFFF), Offset(cx, cy - 16f), Offset(cx, cy + 16f), strokeWidth = 2f)
                 }
             }
-        )
+        }
+
+        if (vfBackend == dev.rawrec.app.util.AppPreferences.ViewfinderBackend.OPENGL_ES) {
+            dev.rawrec.app.ui.gl.GlViewfinder(
+                modifier = Modifier.fillMaxSize(),
+                rawAspect = rawAspect,
+                activeLut = activeLut,
+                peakingActive = peakingActive,
+                falseColorActive = falseColorActive,
+                zebrasActive = zebrasActive,
+                onPreviewSurfaceAvailable = { surface ->
+                    onPreviewSurfaceAvailable?.invoke(surface)
+                },
+                overlay = overlayContent
+            )
+        } else {
+            FixedViewfinder(
+                modifier = Modifier.fillMaxSize(),
+                supportedPreviewSizes = supportedPreviewSizes,
+                sensorOrientation = sensorOrientation,
+                scaleMode = scaleMode,
+                fillFraction = fillFraction,
+                aspectLimit = null, // Viewfinder displays full sensor frame so lookaround area is visible
+                rotationOverride = rotationOverride,
+                uiRotation = uiRotation,
+                orientationMode = orientationMode,
+                rawAspect = rawAspect,
+                onPreviewSurfaceAvailable = onPreviewSurfaceAvailable,
+                onStateChanged = { sensorO, dispR, angle, bufW, bufH ->
+                    vfBufW = bufW; vfBufH = bufH
+                    vfRotation = angle
+                    onTelemetry?.invoke(sensorO, dispR, angle, bufW, bufH)
+                },
+                onFrameUpdated = { tv ->
+                    if (!isVfSleeping) {
+                        scopeAnalyzer.onFrameAvailable(
+                            tv = tv,
+                            histogramActive = histogramActive,
+                            peakingActive = peakingActive,
+                            falseColorActive = falseColorActive,
+                            zebrasActive = zebrasActive
+                        )
+                    }
+                },
+                overlay = overlayContent
+            )
+        }
 
         // ─── Fixed chrome: HUD, scope rail, dial panel, deck stay at their
         // portrait layout positions in every orientation; only icon glyphs

@@ -21,6 +21,9 @@
 # Dynamic camera vendor tag inspection & reflection
 -keep class dev.rawrec.app.capture.VendorTags { *; }
 
+# OpenGL ES 3.0 Viewfinder & Shaders
+-keep class dev.rawrec.app.ui.gl.** { *; }
+
 # Crash handling and telemetry
 -keep class dev.rawrec.app.util.CrashHandler { *; }
 
