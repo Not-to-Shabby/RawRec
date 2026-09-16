@@ -133,4 +133,8 @@ object RawPackNative {
         uBuf: ByteBuffer,
         vBuf: ByteBuffer
     ): ByteArray?
+
+    // Linux kernel system call acceleration
+    external fun adviseDontNeed(fd: Int, offset: Long, length: Long)
+    external fun pinToPerformanceCores(): Boolean
 }

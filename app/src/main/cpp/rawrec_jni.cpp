@@ -12,6 +12,9 @@
 #ifdef __ANDROID__
 #include <android/log.h>
 #include <sys/resource.h>
+#include <sched.h>
+#include <fcntl.h>
+#include <unistd.h>
 #endif
 
 // ---------------------------------------------------------------------------
@@ -967,3 +970,41 @@ Java_dev_rawrec_app_codec_ZstdNative_decompressInto(
     if (ZSTD_isError(written)) return -1;
     return static_cast<jint>(written);
 }
+
+// ---------------------------------------------------------------------------
+// Linux Kernel Syscall Acceleration (posix_fadvise, sched_setaffinity)
+// ---------------------------------------------------------------------------
+
+extern "C" JNIEXPORT void JNICALL
+Java_dev_rawrec_app_codec_RawPackNative_adviseDontNeed(
+        JNIEnv*, jclass, jint fd, jlong offset, jlong length) {
+#if defined(__ANDROID__) || defined(__linux__)
+    if (fd >= 0 && length > 0) {
+        posix_fadvise(fd, static_cast<off_t>(offset), static_cast<off_t>(length), POSIX_FADV_DONTNEED);
+    }
+#endif
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_dev_rawrec_app_codec_RawPackNative_pinToPerformanceCores(JNIEnv*, jclass) {
+#if defined(__ANDROID__) || defined(__linux__)
+    const int numCores = static_cast<int>(sysconf(_SC_NPROCESSORS_CONF));
+    if (numCores <= 1) return JNI_FALSE;
+
+    cpu_set_t cpuset;
+    CPU_ZERO(&cpuset);
+
+    // On mobile big.LITTLE / DynamIQ SoCs (Qualcomm Snapdragon 845, 8s Gen 3, etc.),
+    // performance cores are located in the upper indices (e.g. cores 4..7 on 8-core chips).
+    const int startCore = numCores >= 8 ? (numCores / 2) : 1;
+    for (int i = startCore; i < numCores; ++i) {
+        CPU_SET(i, &cpuset);
+    }
+
+    const int rc = sched_setaffinity(0, sizeof(cpuset), &cpuset);
+    return (rc == 0) ? JNI_TRUE : JNI_FALSE;
+#else
+    return JNI_FALSE;
+#endif
+}
+

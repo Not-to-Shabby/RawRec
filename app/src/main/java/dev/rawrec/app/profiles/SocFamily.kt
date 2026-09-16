@@ -7,6 +7,7 @@ import android.os.Build
  */
 enum class SocFamily {
     QUALCOMM,
+    QUALCOMM_SDM845,
     MEDIATEK,
     SAMSUNG_EXYNOS,
     GOOGLE_TENSOR,
@@ -21,6 +22,9 @@ enum class SocFamily {
         ): SocFamily {
             val combined = "$hardware $board $socModel".uppercase()
             return when {
+                // Specialized detection for Snapdragon 845 devices (e.g. Xiaomi Mi MIX 2S "polaris", Mi 8 "dipper", POCO F1 "beryllium")
+                combined.containsAny("SDM845", "POLARIS", "DIPPER", "BERYLLIUM") -> QUALCOMM_SDM845
+
                 combined.containsAny(
                     "QCOM", "QUALCOMM", "SNAPDRAGON", "SM8", "SM7", "SM6", "SM4",
                     "SDM", "MSM", "PERIDOT", "PINEAPPLE", "KALAMA", "TARO", "LAHAINA"

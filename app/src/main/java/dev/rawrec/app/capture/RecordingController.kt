@@ -473,10 +473,11 @@ class RecordingController(private val context: Context) {
         val preStat = runCatching { android.os.StatFs(dir.absolutePath) }.getOrNull()
         if (preStat != null && preStat.totalBytes > 0L) {
             val usedRatio = (preStat.totalBytes - preStat.availableBytes).toDouble() / preStat.totalBytes
-            if (usedRatio >= 0.95) {
+            val availableGB = preStat.availableBytes.toDouble() / (1 shl 30)
+            if (usedRatio >= 0.98 || availableGB < 1.0) {
                 val pctStr = "%.1f".format(usedRatio * 100)
-                AppLog.w(TAG, "Cannot start recording: storage is $pctStr% full (limit 95%)")
-                publish { RecStats(error = "Storage 95% full — cannot record") }
+                AppLog.w(TAG, "Cannot start recording: storage is $pctStr% full (<1GB free)")
+                publish { RecStats(error = "Storage full (<1GB free) — cannot record") }
                 synchronized(startStopLock) { isStarting = false }
                 return
             }
@@ -652,6 +653,10 @@ class RecordingController(private val context: Context) {
         repeat(compressWorkers) { workerIndex ->
             pool.execute {
                 dev.rawrec.app.profiles.SocOptimizer.applyThreadPriority(socTuning.threadPriority)
+                // Pin compression worker to big performance cores via Linux sched_setaffinity
+                if (prefs.cacheOptimization && RawPackNative.loaded) {
+                    runCatching { RawPackNative.pinToPerformanceCores() }
+                }
                 workerTids.add(Process.myTid())
                 // First thread to come up starts the hint session with the
                 // writer tid (we don't own it here; the engine's capture
@@ -705,6 +710,9 @@ class RecordingController(private val context: Context) {
         var extractCount = 0
         val extractor = Thread({
             dev.rawrec.app.profiles.SocOptimizer.applyThreadPriority(socTuning.threadPriority)
+            if (prefs.cacheOptimization && RawPackNative.loaded) {
+                runCatching { RawPackNative.pinToPerformanceCores() }
+            }
             while (!stopping || inQ.isNotEmpty()) {
                 val qi = inQ.poll(50, TimeUnit.MILLISECONDS) ?: continue
                 try {
@@ -1206,6 +1214,15 @@ class RecordingController(private val context: Context) {
 
         try {
             FileOutputStream(file).use { fos ->
+                val fdObj = runCatching { fos.fd }.getOrNull()
+                val rawFdInt = if (fdObj != null) {
+                    runCatching {
+                        val field = java.io.FileDescriptor::class.java.getDeclaredField("descriptor")
+                        field.isAccessible = true
+                        field.getInt(fdObj)
+                    }.getOrDefault(-1)
+                } else -1
+
                 CountingStream(fos).use { counting ->
                     val header = RvspHeader(
                         width = size.width,
@@ -1249,11 +1266,21 @@ class RecordingController(private val context: Context) {
                             w.writeFrameRaw(item.encoded, item.tsNs, item.expNs, item.iso)
                             written++
                             writtenCounter.set(written)
-                            bytesCounter.set(counting.count + Rvsp.HEADER_SIZE)
+                            val currentWrittenBytes = counting.count + Rvsp.HEADER_SIZE
+                            bytesCounter.set(currentWrittenBytes)
                             val rawFrameBytes = if (packing == Rvsp.PACKING_MIPI_PACKED)
                                 MipiPacker.packedSize(sampleCount).toLong()
                             else sampleCount * 2L
                             rawEstimateCounter.set(written * rawFrameBytes)
+
+                            // Linux kernel page cache eviction via posix_fadvise: immediately drops written pages
+                            // from system RAM to prevent dirty page buildup and avoid Android Low Memory Killer (LMK)
+                            if (prefs.cacheOptimization && rawFdInt >= 0 && RawPackNative.loaded) {
+                                runCatching {
+                                    val frameLen = item.encoded.size.toLong() + Rvsp.RECORD_HEADER_BYTES
+                                    RawPackNative.adviseDontNeed(rawFdInt, currentWrittenBytes - frameLen, frameLen)
+                                }
+                            }
 
                             val now = SystemClock.elapsedRealtime()
                             maybePublishStats(now)
@@ -1270,18 +1297,19 @@ class RecordingController(private val context: Context) {
                                             s.bytesWritten / 1e6, s.ratio * 100
                                         )
                                 )
-                                // Active streaming check: auto-stop if storage >= 95% full
+                                // Active streaming check: auto-stop if storage >= 98% full or <500MB free
                                 runCatching {
                                     val stat = android.os.StatFs(file.parentFile?.absolutePath ?: recordingsDir().absolutePath)
                                     val total = stat.totalBytes
                                     val avail = stat.availableBytes
-                                    if (total > 0L && (total - avail).toDouble() / total >= 0.95) {
+                                    val availMB = avail.toDouble() / (1 shl 20)
+                                    if (total > 0L && ((total - avail).toDouble() / total >= 0.98 || availMB < 500.0)) {
                                         val usedPct = (total - avail).toDouble() / total * 100
                                         val pctStr = "%.1f".format(usedPct)
-                                        AppLog.w(TAG, "Storage is $pctStr% full (limit 95%) — auto-stopping recording")
+                                        AppLog.w(TAG, "Storage is $pctStr% full (<500MB free) — auto-stopping recording")
                                         Thread({ stop() }, "rvsp-storage-autostop").start()
                                         synchronized(statsLock) {
-                                            _stats.value = _stats.value.copy(error = "Storage 95% full — auto-stopped")
+                                            _stats.value = _stats.value.copy(error = "Storage full (<500MB free) — auto-stopped")
                                         }
                                     }
                                 }

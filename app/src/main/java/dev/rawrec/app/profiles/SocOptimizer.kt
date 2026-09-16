@@ -104,6 +104,26 @@ object SocOptimizer {
                     zstdLevel = -3 // Ultra-fast mode: achieves ~40 fps aggregate compression throughput on Kryo cores
                 )
             }
+            SocFamily.QUALCOMM_SDM845 -> {
+                // Qualcomm Snapdragon 845 / Kryo 385 Gold (e.g. Xiaomi Mi MIX 2S "polaris").
+                // 4x Kryo 385 Gold cores have 256KB private L2; UFS 2.1 writes max out at ~180-220 MB/s.
+                // 3 workers leave 1 big core free for Camera2 HAL and 4 little cores for I/O and UI.
+                SocTuning(
+                    family = family,
+                    recommendedCompressWorkers = 3,
+                    recommendedQueueCapacities = QueueCapacities(
+                        inCapacity = 4,
+                        midCapacity = 6,
+                        outCapacity = 8,
+                        maxImages = 8
+                    ),
+                    threadPriority = Process.THREAD_PRIORITY_URGENT_DISPLAY,
+                    defaultPacking = "MIPI10_PACKED",
+                    strideAlignmentBytes = 64,
+                    description = "Qualcomm Snapdragon 845 / UFS 2.1 balanced tuning",
+                    zstdLevel = -3
+                )
+            }
             SocFamily.MEDIATEK -> {
                 // MediaTek Dimensity (all-big core layout on 9300; 128/256-byte stride quirks).
                 val workers = (totalCores - 1).coerceIn(2, 4)
