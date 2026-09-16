@@ -165,9 +165,9 @@ fun GalleryExportDialog(
         onDispose {
             exportJob?.cancel()
             if (wakeLock?.isHeld == true) {
-                wakeLock.release()
+                runCatching { wakeLock.release() }
             }
-            if (previewBitmap == null) {
+            if (thumbnailBitmap != null && thumbnailBitmap !== previewBitmap) {
                 thumbnailBitmap?.recycle()
                 thumbnailBitmap = null
             }
@@ -613,7 +613,7 @@ fun GalleryExportDialog(
                                 }
                             } finally {
                                 if (wakeLock?.isHeld == true) {
-                                    wakeLock.release()
+                                    runCatching { wakeLock.release() }
                                 }
                             }
                         }
@@ -627,7 +627,7 @@ fun GalleryExportDialog(
                         exportJob?.cancel()
                         isExporting = false
                         if (wakeLock?.isHeld == true) {
-                            wakeLock.release()
+                            runCatching { wakeLock.release() }
                         }
                     },
                     colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)

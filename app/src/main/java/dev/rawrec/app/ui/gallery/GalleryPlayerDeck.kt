@@ -122,6 +122,21 @@ fun GalleryPlayerDeck(
 
     // Open file & scan records (MP4 vs RVSP)
     LaunchedEffect(file) {
+        // Explicitly cleanup prior open handles and caches when switching files
+        mediaPlayer?.let { mp ->
+            runCatching {
+                mp.stop()
+                mp.release()
+            }
+            mediaPlayer = null
+        }
+        audioPlayer?.release()
+        audioPlayer = null
+        runCatching { sharedRaf?.close() }
+        sharedRaf = null
+        prefetchCache.values.forEach { runCatching { it.recycle() } }
+        prefetchCache.clear()
+
         if (isMp4) {
             withContext(Dispatchers.IO) {
                 runCatching {
@@ -429,6 +444,10 @@ fun GalleryPlayerDeck(
                     playbackStartRealtimeNs = System.nanoTime()
                     lastWindowStartNs = System.nanoTime()
                     framesPresentedInWindow = 0
+                    prefetchCache.values.forEach { bmp ->
+                        if (!bmp.isRecycled && bitmapPool.size < 8) bitmapPool.offer(bmp)
+                        else runCatching { bmp.recycle() }
+                    }
                     prefetchCache.clear()
                     delay(frameIntervalMs)
                     continue
@@ -644,16 +663,22 @@ fun GalleryPlayerDeck(
                         contentAlignment = Alignment.Center
                     ) {
                         if (isMp4) {
+                            var mpSurface by remember { mutableStateOf<Surface?>(null) }
                             AndroidView(
                                 factory = { ctx ->
                                     TextureView(ctx).apply {
                                         surfaceTextureListener = object : TextureView.SurfaceTextureListener {
                                             override fun onSurfaceTextureAvailable(st: SurfaceTexture, w: Int, h: Int) {
-                                                mediaPlayer?.setSurface(Surface(st))
+                                                mpSurface?.release()
+                                                val surf = Surface(st)
+                                                mpSurface = surf
+                                                mediaPlayer?.setSurface(surf)
                                             }
                                             override fun onSurfaceTextureSizeChanged(st: SurfaceTexture, w: Int, h: Int) {}
                                             override fun onSurfaceTextureDestroyed(st: SurfaceTexture): Boolean {
                                                 mediaPlayer?.setSurface(null)
+                                                mpSurface?.release()
+                                                mpSurface = null
                                                 return true
                                             }
                                             override fun onSurfaceTextureUpdated(st: SurfaceTexture) {}

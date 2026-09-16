@@ -372,31 +372,35 @@ class GlViewfinderRenderer(
     }
 
     fun release() {
+        val glView = glSurfaceView
+        glView?.queueEvent {
+            deleteLut3D()
+            if (dummy3dTexId != 0) {
+                GLES30.glDeleteTextures(1, intArrayOf(dummy3dTexId), 0)
+                dummy3dTexId = 0
+            }
+            if (oesTextureId != 0) {
+                GLES30.glDeleteTextures(1, intArrayOf(oesTextureId), 0)
+                oesTextureId = 0
+            }
+            if (vao[0] != 0) {
+                GLES30.glDeleteVertexArrays(1, vao, 0)
+                vao[0] = 0
+            }
+            if (vbo[0] != 0) {
+                GLES30.glDeleteBuffers(1, vbo, 0)
+                vbo[0] = 0
+            }
+            if (programId != 0) {
+                GLES30.glDeleteProgram(programId)
+                programId = 0
+            }
+        }
         surfaceTexture?.release()
         surfaceTexture = null
         previewSurface?.release()
         previewSurface = null
-        deleteLut3D()
-        if (dummy3dTexId != 0) {
-            GLES30.glDeleteTextures(1, intArrayOf(dummy3dTexId), 0)
-            dummy3dTexId = 0
-        }
-        if (oesTextureId != 0) {
-            GLES30.glDeleteTextures(1, intArrayOf(oesTextureId), 0)
-            oesTextureId = 0
-        }
-        if (vao[0] != 0) {
-            GLES30.glDeleteVertexArrays(1, vao, 0)
-            vao[0] = 0
-        }
-        if (vbo[0] != 0) {
-            GLES30.glDeleteBuffers(1, vbo, 0)
-            vbo[0] = 0
-        }
-        if (programId != 0) {
-            GLES30.glDeleteProgram(programId)
-            programId = 0
-        }
+        glSurfaceView = null
     }
 
     private fun createProgram(vertSrc: String, fragSrc: String): Int {
