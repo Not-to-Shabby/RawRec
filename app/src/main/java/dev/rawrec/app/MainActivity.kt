@@ -508,6 +508,17 @@ fun RawRecApp() {
                             recCacheOpt = on
                             prefs.cacheOptimization = on
                         }
+                        "set_camera" -> {
+                            val id = intent.getStringExtra("id") ?: intent.getIntExtra("id", 0).toString()
+                            val matched = allCams.firstOrNull { it.id == id }
+                            if (matched != null) {
+                                recCamSel = matched
+                                val newSize = matched.rawSizes.firstOrNull()
+                                recSizeSel = newSize
+                                prefs.cameraId = matched.id
+                                prefs.rawSize = newSize
+                            }
+                        }
                     }
                 }
             }

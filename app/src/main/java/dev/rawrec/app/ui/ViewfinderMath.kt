@@ -25,16 +25,25 @@ object ViewfinderMath {
     fun autoRotation(
         sensorOrientation: Int,
         rotationDeg: Int = 0,
-        mode: OrientationMode = OrientationMode.CINEMA_LANDSCAPE
+        mode: OrientationMode = OrientationMode.CINEMA_LANDSCAPE,
+        isFrontCamera: Boolean = false
     ): Int = when (mode) {
         OrientationMode.CINEMA_LANDSCAPE -> {
-            // In a landscape activity window (SCREEN_ORIENTATION_SENSOR_LANDSCAPE), Android's WindowManager
-            // automatically rotates the entire window 180° when flipping between ROTATION_90 and ROTATION_270.
-            // The upright relative transform to compensate the hardware sensor orientation (90° on back cameras)
-            // is (360 - sensorOrientation) % 360 = 270° (90° CCW).
-            (360 - (sensorOrientation % 360)) % 360
+            if (isFrontCamera) {
+                // For front-facing camera (sensorOrientation=270° on POCO F6),
+                // 270° rotation keeps the head at the top in Cinema Landscape.
+                270
+            } else {
+                // In a landscape activity window (SCREEN_ORIENTATION_SENSOR_LANDSCAPE), Android's WindowManager
+                // automatically rotates the entire window 180° when flipping between ROTATION_90 and ROTATION_270.
+                // The upright relative transform to compensate the hardware sensor orientation (90° on back cameras)
+                // is (360 - sensorOrientation) % 360 = 270° (90° CCW).
+                (360 - (sensorOrientation % 360)) % 360
+            }
         }
-        OrientationMode.CHASSIS_LOCKED -> 0
+        OrientationMode.CHASSIS_LOCKED -> {
+            if (isFrontCamera) 180 else 0
+        }
     }
 
     /** Final angle: manual override wins over orientation mode default. */
@@ -42,8 +51,9 @@ object ViewfinderMath {
         sensorOrientation: Int,
         rotationDeg: Int = 0,
         override: Int? = null,
-        mode: OrientationMode = OrientationMode.CINEMA_LANDSCAPE
-    ): Int = override ?: autoRotation(sensorOrientation, rotationDeg, mode)
+        mode: OrientationMode = OrientationMode.CINEMA_LANDSCAPE,
+        isFrontCamera: Boolean = false
+    ): Int = override ?: autoRotation(sensorOrientation, rotationDeg, mode, isFrontCamera)
 
     val OVERRIDE_OPTIONS = listOf<Int?>(null, 0, 90, 180, 270)
 
@@ -343,8 +353,9 @@ object ViewfinderMath {
         bufH: Float,
         effW: Float,
         effH: Float,
-        rotation: Int
-    ): FloatArray = contentTransformStretchFrac(viewW, viewH, bufW, bufH, effW, effH, 1f, rotation)
+        rotation: Int,
+        isFrontCamera: Boolean = false
+    ): FloatArray = contentTransformStretchFrac(viewW, viewH, bufW, bufH, effW, effH, 1f, rotation, isFrontCamera)
 
     /**
      * Stretch-with-fraction: per-axis scales interpolate from the FIT (square-
@@ -361,7 +372,8 @@ object ViewfinderMath {
         effW: Float,
         effH: Float,
         stretchFrac: Float,
-        rotation: Int
+        rotation: Int,
+        isFrontCamera: Boolean = false
     ): FloatArray {
         val scales = stretchAxisScales(viewW, viewH, effW, effH, stretchFrac, rotation)
         val a = scales[0] * bufW / viewW
@@ -373,10 +385,17 @@ object ViewfinderMath {
         val cos = kotlin.math.cos(rad).toFloat()
         val sin = kotlin.math.sin(rad).toFloat()
 
-        val m00 = a * cos;     val m01 = -d * sin
+        var m00 = a * cos;     var m01 = -d * sin
         val m10 = a * sin;     val m11 = d * cos
-        val tx = cx - (m00 * cx + m01 * cy)
+        var tx = cx - (m00 * cx + m01 * cy)
         val ty = cy - (m10 * cx + m11 * cy)
+
+        if (isFrontCamera) {
+            m00 = -m00
+            m01 = -m01
+            tx = viewW - tx
+        }
+
         return floatArrayOf(
             m00, m01, tx,
             m10, m11, ty,
@@ -468,7 +487,8 @@ object ViewfinderMath {
         effW: Float,
         effH: Float,
         k: Float,
-        rotation: Int
+        rotation: Int,
+        isFrontCamera: Boolean = false
     ): FloatArray {
         val a = k * bufW / viewW
         val d = k * bufH / viewH
@@ -480,10 +500,18 @@ object ViewfinderMath {
         val sin = kotlin.math.sin(rad).toFloat()
 
         // Composed: T(center) * R(rot) * S(a,d) * T(-center)
-        val m00 = a * cos;     val m01 = -d * sin
+        var m00 = a * cos;     var m01 = -d * sin
         val m10 = a * sin;     val m11 = d * cos
-        val tx = cx - (m00 * cx + m01 * cy)
+        var tx = cx - (m00 * cx + m01 * cy)
         val ty = cy - (m10 * cx + m11 * cy)
+
+        if (isFrontCamera) {
+            // Horizontal mirror around center: x' = viewW - x
+            m00 = -m00
+            m01 = -m01
+            tx = viewW - tx
+        }
+
         return floatArrayOf(
             m00, m01, tx,
             m10, m11, ty,

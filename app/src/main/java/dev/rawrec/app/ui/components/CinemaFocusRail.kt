@@ -43,6 +43,7 @@ fun CinemaFocusRail(
     focusPointA: Float? = null,
     focusPointB: Float? = null,
     rackDurationMs: Long = 1200L,
+    isFixedFocus: Boolean = false,
     onFocusChanged: (diopters: Float, autoFocus: Boolean) -> Unit,
     onSetPointA: (Float?) -> Unit = {},
     onSetPointB: (Float?) -> Unit = {},
@@ -98,8 +99,12 @@ fun CinemaFocusRail(
                 // AF / MF Button
                 Surface(
                     shape = MaterialTheme.shapes.extraSmall,
-                    color = if (autoFocus) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh,
-                    border = BorderStroke(1.dp, if (autoFocus) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant),
+                    color = when {
+                        isFixedFocus -> MaterialTheme.colorScheme.surfaceContainer
+                        autoFocus -> MaterialTheme.colorScheme.primaryContainer
+                        else -> MaterialTheme.colorScheme.surfaceContainerHigh
+                    },
+                    border = BorderStroke(1.dp, if (!isFixedFocus && autoFocus) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant),
                     modifier = Modifier
                         .width(44.dp)
                         .height(30.dp)
@@ -107,13 +112,13 @@ fun CinemaFocusRail(
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
-                            .clickable { onFocusChanged(currentDiopters, !autoFocus) },
+                            .clickable(enabled = !isFixedFocus) { onFocusChanged(currentDiopters, !autoFocus) },
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            text = if (autoFocus) "AF" else "MF",
+                            text = if (isFixedFocus) "FIX" else if (autoFocus) "AF" else "MF",
                             style = DeckLabelStyle,
-                            color = if (autoFocus) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                            color = if (!isFixedFocus && autoFocus) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                             fontWeight = FontWeight.Bold
                         )
                     }
@@ -124,17 +129,18 @@ fun CinemaFocusRail(
                 Surface(
                     shape = MaterialTheme.shapes.extraSmall,
                     color = when {
+                        isFixedFocus -> MaterialTheme.colorScheme.surfaceContainer
                         isAtA -> Color(0xFF00E5FF).copy(alpha = 0.35f)
                         focusPointA != null -> Color(0xFF00E5FF).copy(alpha = 0.15f)
                         else -> MaterialTheme.colorScheme.surfaceContainerHigh
                     },
-                    border = BorderStroke(1.dp, if (focusPointA != null) Color(0xFF00E5FF) else MaterialTheme.colorScheme.outlineVariant),
-                    modifier = Modifier
-                        .height(30.dp)
+                    border = BorderStroke(1.dp, if (!isFixedFocus && focusPointA != null) Color(0xFF00E5FF) else MaterialTheme.colorScheme.outlineVariant),
+                    modifier = Modifier.height(30.dp)
                 ) {
                     Box(
                         modifier = Modifier
                             .combinedClickable(
+                                enabled = !isFixedFocus,
                                 onClick = {
                                     if (focusPointA != null) {
                                         triggerRack(focusPointA)
@@ -148,9 +154,9 @@ fun CinemaFocusRail(
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            text = if (focusPointA != null) "A ${FocusCalculator.formatFocusDistance(focusPointA)}" else "Set A",
+                            text = if (isFixedFocus) "A —" else if (focusPointA != null) "A ${FocusCalculator.formatFocusDistance(focusPointA)}" else "Set A",
                             style = DeckLabelStyle,
-                            color = if (focusPointA != null) Color(0xFF00E5FF) else MaterialTheme.colorScheme.onSurfaceVariant,
+                            color = if (!isFixedFocus && focusPointA != null) Color(0xFF00E5FF) else MaterialTheme.colorScheme.onSurfaceVariant,
                             fontWeight = FontWeight.Bold
                         )
                     }
@@ -165,6 +171,7 @@ fun CinemaFocusRail(
                 ) {
                     Slider(
                         value = currentDiopters.coerceIn(0f, 10f),
+                        enabled = !isFixedFocus,
                         onValueChange = {
                             if (!isRacking) {
                                 onFocusChanged(it, false)
@@ -173,42 +180,45 @@ fun CinemaFocusRail(
                         valueRange = 0f..10f,
                         colors = SliderDefaults.colors(
                             thumbColor = when {
+                                isFixedFocus -> MaterialTheme.colorScheme.outline
                                 isRacking -> MaterialTheme.colorScheme.error
                                 isAtA -> Color(0xFF00E5FF)
                                 focusPointB != null && kotlin.math.abs(currentDiopters - focusPointB) < 0.08f -> Color(0xFFFFB300)
                                 else -> MaterialTheme.colorScheme.primary
                             },
-                            activeTrackColor = MaterialTheme.colorScheme.primary,
+                            activeTrackColor = if (isFixedFocus) MaterialTheme.colorScheme.outlineVariant else MaterialTheme.colorScheme.primary,
                             inactiveTrackColor = MaterialTheme.colorScheme.outlineVariant
                         ),
                         modifier = Modifier.fillMaxWidth()
                     )
 
                     // Overlay Witness Pins for A & B
-                    Canvas(modifier = Modifier.fillMaxWidth().height(16.dp)) {
-                        val trackPadding = 12.dp.toPx()
-                        val usableW = size.width - trackPadding * 2
+                    if (!isFixedFocus) {
+                        Canvas(modifier = Modifier.fillMaxWidth().height(16.dp)) {
+                            val trackPadding = 12.dp.toPx()
+                            val usableW = size.width - trackPadding * 2
 
-                        focusPointA?.let { pA ->
-                            val x = trackPadding + (pA.coerceIn(0f, 10f) / 10f) * usableW
-                            drawLine(
-                                color = Color(0xFF00E5FF),
-                                start = Offset(x, 0f),
-                                end = Offset(x, size.height),
-                                strokeWidth = 3f
-                            )
-                            drawCircle(Color(0xFF00E5FF), radius = 3.5f, center = Offset(x, 0f))
-                        }
+                            focusPointA?.let { pA ->
+                                val x = trackPadding + (pA.coerceIn(0f, 10f) / 10f) * usableW
+                                drawLine(
+                                    color = Color(0xFF00E5FF),
+                                    start = Offset(x, 0f),
+                                    end = Offset(x, size.height),
+                                    strokeWidth = 3f
+                                )
+                                drawCircle(Color(0xFF00E5FF), radius = 3.5f, center = Offset(x, 0f))
+                            }
 
-                        focusPointB?.let { pB ->
-                            val x = trackPadding + (pB.coerceIn(0f, 10f) / 10f) * usableW
-                            drawLine(
-                                color = Color(0xFFFFB300),
-                                start = Offset(x, 0f),
-                                end = Offset(x, size.height),
-                                strokeWidth = 3f
-                            )
-                            drawCircle(Color(0xFFFFB300), radius = 3.5f, center = Offset(x, size.height))
+                            focusPointB?.let { pB ->
+                                val x = trackPadding + (pB.coerceIn(0f, 10f) / 10f) * usableW
+                                drawLine(
+                                    color = Color(0xFFFFB300),
+                                    start = Offset(x, 0f),
+                                    end = Offset(x, size.height),
+                                    strokeWidth = 3f
+                                )
+                                drawCircle(Color(0xFFFFB300), radius = 3.5f, center = Offset(x, size.height))
+                            }
                         }
                     }
                 }
@@ -218,17 +228,18 @@ fun CinemaFocusRail(
                 Surface(
                     shape = MaterialTheme.shapes.extraSmall,
                     color = when {
+                        isFixedFocus -> MaterialTheme.colorScheme.surfaceContainer
                         isAtB -> Color(0xFFFFB300).copy(alpha = 0.35f)
                         focusPointB != null -> Color(0xFFFFB300).copy(alpha = 0.15f)
                         else -> MaterialTheme.colorScheme.surfaceContainerHigh
                     },
-                    border = BorderStroke(1.dp, if (focusPointB != null) Color(0xFFFFB300) else MaterialTheme.colorScheme.outlineVariant),
-                    modifier = Modifier
-                        .height(30.dp)
+                    border = BorderStroke(1.dp, if (!isFixedFocus && focusPointB != null) Color(0xFFFFB300) else MaterialTheme.colorScheme.outlineVariant),
+                    modifier = Modifier.height(30.dp)
                 ) {
                     Box(
                         modifier = Modifier
                             .combinedClickable(
+                                enabled = !isFixedFocus,
                                 onClick = {
                                     if (focusPointB != null) {
                                         triggerRack(focusPointB)
@@ -242,16 +253,16 @@ fun CinemaFocusRail(
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            text = if (focusPointB != null) "B ${FocusCalculator.formatFocusDistance(focusPointB)}" else "Set B",
+                            text = if (isFixedFocus) "B —" else if (focusPointB != null) "B ${FocusCalculator.formatFocusDistance(focusPointB)}" else "Set B",
                             style = DeckLabelStyle,
-                            color = if (focusPointB != null) Color(0xFFFFB300) else MaterialTheme.colorScheme.onSurfaceVariant,
+                            color = if (!isFixedFocus && focusPointB != null) Color(0xFFFFB300) else MaterialTheme.colorScheme.onSurfaceVariant,
                             fontWeight = FontWeight.Bold
                         )
                     }
                 }
 
                 // One-Tap Rack Focus Trigger (A ➔ B or B ➔ A)
-                if (focusPointA != null && focusPointB != null) {
+                if (!isFixedFocus && focusPointA != null && focusPointB != null) {
                     val targetIsB = !isAtB
                     Surface(
                         shape = MaterialTheme.shapes.extraSmall,
@@ -278,46 +289,49 @@ fun CinemaFocusRail(
                 }
 
                 // Rack Speed Selector Chip
-                Surface(
-                    shape = MaterialTheme.shapes.extraSmall,
-                    color = MaterialTheme.colorScheme.surfaceContainerHighest,
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
-                    modifier = Modifier.height(30.dp)
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .clickable {
-                                val next = when (rackDurationMs) {
-                                    500L -> 1200L
-                                    1200L -> 2500L
-                                    else -> 500L
-                                }
-                                onSetRackDuration(next)
-                            }
-                            .padding(horizontal = 6.dp),
-                        contentAlignment = Alignment.Center
+                if (!isFixedFocus) {
+                    Surface(
+                        shape = MaterialTheme.shapes.extraSmall,
+                        color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
+                        modifier = Modifier.height(30.dp)
                     ) {
-                        Text(
-                            text = when (rackDurationMs) {
-                                500L -> "⚡ 0.5s"
-                                2500L -> "🎬 2.5s"
-                                else -> "⏱ 1.2s"
-                            },
-                            style = DeckLabelStyle,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                        Box(
+                            modifier = Modifier
+                                .clickable {
+                                    val next = when (rackDurationMs) {
+                                        500L -> 1200L
+                                        1200L -> 2500L
+                                        else -> 500L
+                                    }
+                                    onSetRackDuration(next)
+                                }
+                                .padding(horizontal = 6.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = when (rackDurationMs) {
+                                    500L -> "⚡ 0.5s"
+                                    2500L -> "🎬 2.5s"
+                                    else -> "⏱ 1.2s"
+                                },
+                                style = DeckLabelStyle,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
                 }
 
                 // Digital Focus Distance Readout
                 Text(
                     text = when {
+                        isFixedFocus -> "FIXED"
                         autoFocus -> "AUTO"
                         currentDiopters < 0.05f -> "∞"
                         else -> FocusCalculator.formatFocusDistance(currentDiopters)
                     },
                     style = DeckValueStyle,
-                    color = if (!autoFocus) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = if (!isFixedFocus && !autoFocus) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.width(46.dp)
                 )
             }

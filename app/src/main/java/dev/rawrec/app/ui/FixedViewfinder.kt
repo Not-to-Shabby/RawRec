@@ -48,6 +48,7 @@ fun FixedViewfinder(
     uiRotation: Int = 0,
     orientationMode: ViewfinderMath.OrientationMode = ViewfinderMath.OrientationMode.CINEMA_LANDSCAPE,
     rawAspect: Double = 4.0 / 3.0,
+    isFrontCamera: Boolean = false,
     onPreviewSurfaceAvailable: ((Surface?) -> Unit)? = null,
     onStateChanged: ((Int, Int, Int, Int, Int) -> Unit)? = null,
     onFrameUpdated: ((TextureView) -> Unit)? = null,
@@ -68,7 +69,7 @@ fun FixedViewfinder(
             factory = { ctx ->
                 TextureView(ctx).also { tv ->
                     wire(tv, buf.width, buf.height, sensorOrientation, wm,
-                        uiRotation, orientationMode, scaleState, onPreviewSurfaceAvailable, onStateChanged, onFrameUpdated)
+                        uiRotation, orientationMode, isFrontCamera, scaleState, onPreviewSurfaceAvailable, onStateChanged, onFrameUpdated)
                 }
             },
             modifier = Modifier.fillMaxSize(),
@@ -77,6 +78,7 @@ fun FixedViewfinder(
                     h.override = rotationOverride
                     h.uiRotation = uiRotation
                     h.mode = orientationMode
+                    h.isFrontCamera = isFrontCamera
                     h.onState = onStateChanged
                     h.onFrameUpdated = onFrameUpdated
                 }
@@ -84,7 +86,7 @@ fun FixedViewfinder(
                 scaleState.aspect = aspectLimit
                 scaleState.fillFraction = fillFraction
                 applyTransform(tv, buf.width, buf.height, sensorOrientation,
-                    wm, rotationOverride, uiRotation, scaleState, orientationMode, onStateChanged)
+                    wm, rotationOverride, uiRotation, isFrontCamera, scaleState, orientationMode, onStateChanged)
             }
         )
         overlay()
@@ -95,6 +97,7 @@ private class Holder(
     @Volatile var override: Int?,
     @Volatile var uiRotation: Int,
     @Volatile var mode: ViewfinderMath.OrientationMode,
+    @Volatile var isFrontCamera: Boolean = false,
     @Volatile var onState: ((Int, Int, Int, Int, Int) -> Unit)?,
     @Volatile var onFrameUpdated: ((TextureView) -> Unit)?
 )
@@ -113,16 +116,17 @@ private fun wire(
     wm: WindowManager,
     uiRotation: Int,
     mode: ViewfinderMath.OrientationMode,
+    isFrontCamera: Boolean,
     scale: ScaleHolder,
     cb: ((Surface?) -> Unit)?,
     onState: ((Int, Int, Int, Int, Int) -> Unit)?,
     onFrameUpdated: ((TextureView) -> Unit)?
 ) {
-    val holder = Holder(null, uiRotation, mode, onState, onFrameUpdated)
+    val holder = Holder(null, uiRotation, mode, isFrontCamera, onState, onFrameUpdated)
     tv.tag = holder
 
     fun reapply() {
-        applyTransform(tv, bufW, bufH, sensorOrientation, wm, holder.override, holder.uiRotation, scale, holder.mode, holder.onState)
+        applyTransform(tv, bufW, bufH, sensorOrientation, wm, holder.override, holder.uiRotation, holder.isFrontCamera, scale, holder.mode, holder.onState)
     }
 
     // Layout-driven application: the factory runs before first layout
@@ -182,6 +186,7 @@ private fun applyTransform(
     wm: WindowManager,
     override: Int?,
     uiRotation: Int,
+    isFrontCamera: Boolean = false,
     scale: ScaleHolder,
     mode: ViewfinderMath.OrientationMode = ViewfinderMath.OrientationMode.CINEMA_LANDSCAPE,
     onState: ((Int, Int, Int, Int, Int) -> Unit)?
@@ -194,7 +199,7 @@ private fun applyTransform(
     val displayRotation = wm.defaultDisplay.rotation
     // The viewfinder is a stationary cinema monitor: feed rotation is anchored and fixed to the chassis,
     // never spinning or twisting when the device rotates into other angles.
-    val r = ViewfinderMath.effectiveRotation(sensorOrientation, 0, override, mode)
+    val r = ViewfinderMath.effectiveRotation(sensorOrientation, 0, override, mode, isFrontCamera)
 
     // Aspect-limited crop in BUFFER space (no rotation swap): the visible
     // band must equal the recorded WYSIWYG band.
@@ -204,7 +209,7 @@ private fun applyTransform(
         // Anamorphic fill: slider (stretchFrac) interpolates whole-frame fit →
         // edge-to-edge anamorphic. No crop at any position.
         ViewfinderMath.contentTransformStretchFrac(
-            viewW, viewH, bw, bh, effW, effH, scale.fillFraction, r
+            viewW, viewH, bw, bh, effW, effH, scale.fillFraction, r, isFrontCamera
         )
     } else {
         // View-space transform (see ViewfinderMath.contentTransform for the
@@ -213,7 +218,7 @@ private fun applyTransform(
         // pre-stretch is undone and buffer pixels stay square.
         val k = ViewfinderMath.presentationScale(viewW, viewH, effW, effH, scale.fillFraction, r)
         ViewfinderMath.contentTransform(
-            viewW, viewH, bw, bh, effW, effH, k, r
+            viewW, viewH, bw, bh, effW, effH, k, r, isFrontCamera
         )
     }
     val m = Matrix()

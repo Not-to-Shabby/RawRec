@@ -33,7 +33,8 @@ data class CamInfo(
     val supportedFps: List<Double> = listOf(24.0, 30.0),
     val focalLengthMm: Float = 0f,
     val focalLength35mmEq: Float = 0f,
-    val lensRole: LensRole = LensRole.WIDE
+    val lensRole: LensRole = LensRole.WIDE,
+    val isFixedFocus: Boolean = false
 ) {
     /**
      * Professional lens and source label, e.g.:
@@ -232,7 +233,8 @@ object CameraCatalog {
             supportedFps = availableFps,
             focalLengthMm = minFocal,
             focalLength35mmEq = focal35mmEq,
-            lensRole = role
+            lensRole = role,
+            isFixedFocus = (runCatching { c.get(CameraCharacteristics.LENS_INFO_MINIMUM_FOCUS_DISTANCE) }.getOrNull() ?: 0f) == 0f || facing == "front"
         )
     }
 

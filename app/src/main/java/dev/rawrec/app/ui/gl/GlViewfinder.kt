@@ -32,6 +32,7 @@ fun GlViewfinder(
     rotation: Int = 0,
     fillFraction: Float = 0f,
     stretchMode: Boolean = false,
+    isFrontCamera: Boolean = false,
     activeLut: CubeLut? = null,
     peakingActive: Boolean = false,
     falseColorActive: Boolean = false,
@@ -48,11 +49,12 @@ fun GlViewfinder(
         renderer.updateBufferSize(bufferWidth, bufferHeight)
     }
 
-    LaunchedEffect(rotation, rawAspect, fillFraction, stretchMode) {
+    LaunchedEffect(rotation, rawAspect, fillFraction, stretchMode, isFrontCamera) {
         renderer.rotation = rotation
         renderer.rawAspect = rawAspect
         renderer.fillFraction = fillFraction
         renderer.stretchMode = stretchMode
+        renderer.isFrontCamera = isFrontCamera
     }
 
     LaunchedEffect(activeLut) {

@@ -69,6 +69,7 @@ import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -203,6 +204,7 @@ fun CinemaViewfinderScreen(
     } else {
         modifier.fillMaxSize().background(Color.Black)
     }
+    val isFrontCamera = selectedCamera?.facing == "front" || selectedCamera?.lensRole == dev.rawrec.app.probe.LensRole.FRONT
     Box(modifier = rootModifier) {
 
         // Fixed-orientation viewfinder: feed never rotates, only UI chrome does.
@@ -284,12 +286,23 @@ fun CinemaViewfinderScreen(
                         if (overlayImg != null) {
                             clipRect(left = left, top = top, right = right, bottom = bottom) {
                                 rotate(degrees = vfRotation.toFloat(), pivot = Offset(w / 2f, h / 2f)) {
-                                    drawImage(
-                                        image = overlayImg,
-                                        dstOffset = IntOffset(overlayLeft.roundToInt(), overlayTop.roundToInt()),
-                                        dstSize = IntSize(overlayW.roundToInt(), overlayH.roundToInt()),
-                                        filterQuality = FilterQuality.Low
-                                    )
+                                    if (isFrontCamera) {
+                                        scale(scaleX = -1f, scaleY = 1f, pivot = Offset(w / 2f, h / 2f)) {
+                                            drawImage(
+                                                image = overlayImg,
+                                                dstOffset = IntOffset(overlayLeft.roundToInt(), overlayTop.roundToInt()),
+                                                dstSize = IntSize(overlayW.roundToInt(), overlayH.roundToInt()),
+                                                filterQuality = FilterQuality.Low
+                                            )
+                                        }
+                                    } else {
+                                        drawImage(
+                                            image = overlayImg,
+                                            dstOffset = IntOffset(overlayLeft.roundToInt(), overlayTop.roundToInt()),
+                                            dstSize = IntSize(overlayW.roundToInt(), overlayH.roundToInt()),
+                                            filterQuality = FilterQuality.Low
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -333,7 +346,7 @@ fun CinemaViewfinderScreen(
             val glBufSize = remember(supportedPreviewSizes, rawAspect) {
                 chooseBufferSize(supportedPreviewSizes, rawAspect)
             }
-            val r = ViewfinderMath.effectiveRotation(sensorOrientation, 0, rotationOverride, orientationMode)
+            val r = ViewfinderMath.effectiveRotation(sensorOrientation, 0, rotationOverride, orientationMode, isFrontCamera)
             LaunchedEffect(glBufSize, r) {
                 vfBufW = glBufSize.width
                 vfBufH = glBufSize.height
@@ -347,6 +360,7 @@ fun CinemaViewfinderScreen(
                 rotation = r,
                 fillFraction = fillFraction,
                 stretchMode = stretchMode,
+                isFrontCamera = isFrontCamera,
                 activeLut = activeLut,
                 peakingActive = peakingActive,
                 falseColorActive = falseColorActive,
@@ -372,6 +386,7 @@ fun CinemaViewfinderScreen(
                 uiRotation = uiRotation,
                 orientationMode = orientationMode,
                 rawAspect = rawAspect,
+                isFrontCamera = isFrontCamera,
                 onPreviewSurfaceAvailable = onPreviewSurfaceAvailable,
                 onStateChanged = { sensorO, dispR, angle, bufW, bufH ->
                     vfBufW = bufW; vfBufH = bufH
@@ -828,6 +843,7 @@ fun CinemaViewfinderScreen(
                     focusPointA = controls.focusPointA,
                     focusPointB = controls.focusPointB,
                     rackDurationMs = controls.rackDurationMs,
+                    isFixedFocus = selectedCamera?.isFixedFocus == true,
                     onFocusChanged = { d, af ->
                         onControlsChanged(controls.copy(focusDiopters = d, autoFocus = af))
                     },
@@ -982,6 +998,7 @@ fun CinemaViewfinderScreen(
                     focusPointA = controls.focusPointA,
                     focusPointB = controls.focusPointB,
                     rackDurationMs = controls.rackDurationMs,
+                    isFixedFocus = selectedCamera?.isFixedFocus == true,
                     onFocusChanged = { d, af ->
                         onControlsChanged(controls.copy(focusDiopters = d, autoFocus = af))
                     },

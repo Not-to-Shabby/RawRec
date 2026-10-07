@@ -281,7 +281,30 @@ class ViewfinderTransformTest {
         assertEquals(270, ViewfinderMath.autoRotation(90, 90, ViewfinderMath.OrientationMode.CINEMA_LANDSCAPE))
         assertEquals(270, ViewfinderMath.autoRotation(90, 270, ViewfinderMath.OrientationMode.CINEMA_LANDSCAPE))
         // Front camera (270° sensor)
-        assertEquals(90, ViewfinderMath.autoRotation(270, 90, ViewfinderMath.OrientationMode.CINEMA_LANDSCAPE))
+        assertEquals(90, ViewfinderMath.autoRotation(270, 90, ViewfinderMath.OrientationMode.CINEMA_LANDSCAPE, isFrontCamera = false))
+        assertEquals(270, ViewfinderMath.autoRotation(270, 90, ViewfinderMath.OrientationMode.CINEMA_LANDSCAPE, isFrontCamera = true))
+        assertEquals(180, ViewfinderMath.autoRotation(270, 0, ViewfinderMath.OrientationMode.CHASSIS_LOCKED, isFrontCamera = true))
+    }
+
+    @Test
+    fun `front camera contentTransform mirrors horizontally across center`() {
+        val k = ViewfinderMath.presentationScale(vw, vh, bw, bh, ViewfinderMath.ScaleMode.FIT, 270)
+        val mBack = ViewfinderMath.contentTransform(vw, vh, bw, bh, bw, bh, k, 270, isFrontCamera = false)
+        val mFront = ViewfinderMath.contentTransform(vw, vh, bw, bh, bw, bh, k, 270, isFrontCamera = true)
+
+        // Map arbitrary point (100, 200) through both transforms
+        val (xb, yb) = map(mBack, 100f, 200f)
+        val (xf, yf) = map(mFront, 100f, 200f)
+
+        // Y coordinate should be identical
+        assertEquals(yb, yf, 1e-3f)
+        // X coordinate should be horizontally reflected around view center: xf = vw - xb
+        assertEquals(vw - xb, xf, 1e-3f)
+
+        // View center must remain fixed point
+        val (cfx, cfy) = map(mFront, vw / 2f, vh / 2f)
+        assertEquals(vw / 2f, cfx, 1e-3f)
+        assertEquals(vh / 2f, cfy, 1e-3f)
     }
 
     @Test

@@ -57,6 +57,7 @@ class GlViewfinderRenderer(
     @Volatile var rawAspect: Double = 4.0 / 3.0
     @Volatile var fillFraction: Float = 0f
     @Volatile var stretchMode: Boolean = false
+    @Volatile var isFrontCamera: Boolean = false
 
     // Scope controls & Histogram readback
     @Volatile var peakingActive: Boolean = false
@@ -77,6 +78,7 @@ class GlViewfinderRenderer(
     private var uSTMatrixLoc = -1
     private var uScaleLoc = -1
     private var uRotationLoc = -1
+    private var uIsFrontLoc = -1
     private var uTexelSizeLoc = -1
     private var uAnimTimeLoc = -1
     private var uUseLutLoc = -1
@@ -141,6 +143,7 @@ class GlViewfinderRenderer(
         uSTMatrixLoc = GLES30.glGetUniformLocation(programId, "uSTMatrix")
         uScaleLoc = GLES30.glGetUniformLocation(programId, "uScale")
         uRotationLoc = GLES30.glGetUniformLocation(programId, "uRotation")
+        uIsFrontLoc = GLES30.glGetUniformLocation(programId, "uIsFront")
         uTexelSizeLoc = GLES30.glGetUniformLocation(programId, "uTexelSize")
         uAnimTimeLoc = GLES30.glGetUniformLocation(programId, "uAnimTime")
         uUseLutLoc = GLES30.glGetUniformLocation(programId, "uUseLut")
@@ -271,6 +274,7 @@ class GlViewfinderRenderer(
         GLES30.glUniformMatrix4fv(uSTMatrixLoc, 1, false, stMatrix, 0)
         GLES30.glUniform2f(uScaleLoc, scaleX, scaleY)
         GLES30.glUniform1i(uRotationLoc, rotation)
+        GLES30.glUniform1i(uIsFrontLoc, if (isFrontCamera) 1 else 0)
         GLES30.glUniform2f(uTexelSizeLoc, 1.0f / viewWidth, 1.0f / viewHeight)
 
         val elapsedSec = (SystemClock.uptimeMillis() - startTimeMs) / 1000.0f
@@ -447,11 +451,13 @@ layout(location = 1) in vec2 aTexCoord;
 uniform mat4 uSTMatrix;
 uniform vec2 uScale;
 uniform int uRotation;
+uniform int uIsFront;
 
 out vec2 vTexCoord;
 
 void main() {
-    gl_Position = vec4(aPosition.x * uScale.x, aPosition.y * uScale.y, 0.0, 1.0);
+    float posX = (uIsFront == 1) ? -aPosition.x : aPosition.x;
+    gl_Position = vec4(posX * uScale.x, aPosition.y * uScale.y, 0.0, 1.0);
 
     vec2 tc = aTexCoord;
     if (uRotation == 90) {
