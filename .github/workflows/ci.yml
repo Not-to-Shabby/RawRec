@@ -24,6 +24,7 @@ jobs:
 
       - name: Accept Android SDK Licenses & Install NDK / CMake
         run: |
+          export PATH="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$PATH"
           yes | sdkmanager --licenses || true
           yes | sdkmanager --install "ndk;27.0.12077973" "cmake;3.22.1" "platforms;android-35" "build-tools;35.0.0"
 
