@@ -1,6 +1,7 @@
 package dev.rawrec.tool
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -77,6 +78,36 @@ class HlgMp4ExporterTest {
         val bytes = exported.readBytes()
         val moovPos = bytes.indexOf("moov".toByteArray(Charsets.US_ASCII))
         assertTrue("moov atom must exist", moovPos != -1)
+    }
+
+    @Test
+    fun `exporting to MP4 with different tone profiles grades the video differently`() {
+        val testRvsp = tempFolder.newFile("test_profiles.rvsp")
+        Rvtool.main(arrayOf("gen", testRvsp.absolutePath))
+
+        val warmMp4 = tempFolder.newFile("warm.mp4")
+        val monoMp4 = tempFolder.newFile("mono.mp4")
+
+        HlgMp4Exporter.export(
+            testRvsp.absolutePath,
+            warmMp4.absolutePath,
+            profile = ColorScience.ToneProfile.CINE_WARM
+        )
+
+        HlgMp4Exporter.export(
+            testRvsp.absolutePath,
+            monoMp4.absolutePath,
+            profile = ColorScience.ToneProfile.CINE_MONO
+        )
+
+        assertTrue(warmMp4.exists() && warmMp4.length() > 1024)
+        assertTrue(monoMp4.exists() && monoMp4.length() > 1024)
+
+        val warmBytes = warmMp4.readBytes()
+        val monoBytes = monoMp4.readBytes()
+
+        // Video payload frames in mdat box must be different because different tone curves were applied
+        assertFalse("Exported MP4s with different profiles must not have identical video bytes", warmBytes.contentEquals(monoBytes))
     }
 
     private fun ByteArray.indexOf(target: ByteArray): Int {

@@ -16,6 +16,7 @@ data class CameraControlState(
     val focusPointA: Float? = null,
     val focusPointB: Float? = null,
     val rackDurationMs: Long = 1200L,
+    val toneProfile: String = "cine_filmic",
     /**
      * Viewfinder framing mode: 0 Full, 1 Widescreen (2.39:1), 2 16:9, 3 4:3, 4 1:1.
      * Shared state like ISO/shutter — the recording honors it (WYSIWYG:

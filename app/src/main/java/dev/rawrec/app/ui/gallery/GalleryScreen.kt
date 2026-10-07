@@ -57,7 +57,8 @@ private enum class GalleryFilter(val label: String) {
 private data class ExportRequest(
     val file: File,
     val rotation: Int = 0,
-    val previewBitmap: android.graphics.Bitmap? = null
+    val previewBitmap: android.graphics.Bitmap? = null,
+    val initialProfile: dev.rawrec.tool.ColorScience.ToneProfile = dev.rawrec.tool.ColorScience.ToneProfile.CINE_FILMIC
 )
 
 @Composable
@@ -238,8 +239,8 @@ fun GalleryScreen(
             GalleryPlayerDeck(
                 file = file,
                 onBack = { activePlayerFile = null },
-                onExportRequested = { f, rot, bmp ->
-                    activeExportRequest = ExportRequest(f, rot, bmp)
+                onExportRequested = { f, rot, bmp, prof ->
+                    activeExportRequest = ExportRequest(f, rot, bmp, prof)
                 }
             )
         }
@@ -249,6 +250,7 @@ fun GalleryScreen(
             GalleryExportDialog(
                 file = req.file,
                 initialRotation = req.rotation,
+                initialProfile = req.initialProfile,
                 previewBitmap = req.previewBitmap,
                 onDismiss = { activeExportRequest = null },
                 onExportComplete = {

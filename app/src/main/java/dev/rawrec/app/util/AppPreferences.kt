@@ -123,6 +123,7 @@ class AppPreferences(
         focusPointA = if (prefs.contains("pref_focus_point_a")) prefs.getFloat("pref_focus_point_a", 0f) else null,
         focusPointB = if (prefs.contains("pref_focus_point_b")) prefs.getFloat("pref_focus_point_b", 0f) else null,
         rackDurationMs = prefs.getLong("pref_rack_duration_ms", 1200L),
+        toneProfile = prefs.getString("pref_tone_profile", "cine_filmic") ?: "cine_filmic",
         aspectIndex = prefs.getInt("pref_aspect_index", 0)
     )
 
@@ -142,6 +143,7 @@ class AppPreferences(
             .putFloat("pref_target_fps", state.targetFps.toFloat())
             .putInt("pref_aspect_index", state.aspectIndex)
             .putLong("pref_rack_duration_ms", state.rackDurationMs)
+            .putString("pref_tone_profile", state.toneProfile)
 
         if (state.focusPointA != null) editor.putFloat("pref_focus_point_a", state.focusPointA)
         else editor.remove("pref_focus_point_a")

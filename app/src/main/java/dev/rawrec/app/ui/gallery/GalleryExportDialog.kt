@@ -78,6 +78,7 @@ enum class ExportFormat(val label: String, val subtitle: String) {
 fun GalleryExportDialog(
     file: File,
     initialRotation: Int = 0,
+    initialProfile: ColorScience.ToneProfile = ColorScience.ToneProfile.CINE_HLG,
     previewBitmap: Bitmap? = null,
     onDismiss: () -> Unit,
     onExportComplete: (File) -> Unit = {}
@@ -87,7 +88,7 @@ fun GalleryExportDialog(
 
     var selectedFormat by remember { mutableStateOf(ExportFormat.MP4) }
     var bakeToneInDng by remember { mutableStateOf(false) }
-    var selectedProfile by remember { mutableStateOf(ColorScience.ToneProfile.CINE_HLG) }
+    var selectedProfile by remember(initialProfile) { mutableStateOf(initialProfile) }
     var selectedRotation by remember(initialRotation) { mutableIntStateOf(initialRotation) }
     var dropdownExpanded by remember { mutableStateOf(false) }
 

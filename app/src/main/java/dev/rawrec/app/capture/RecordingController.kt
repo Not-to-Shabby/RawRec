@@ -628,6 +628,7 @@ class RecordingController(private val context: Context) {
                 framingAspect = effectiveAspect,
                 framingCrop = framingCrop,
                 targetFps = controls.targetFps,
+                toneProfile = controls.toneProfile,
                 lensCalibration = lensCalibration,
                 lensDistortion = lensDistortion,
                 opticalBlack = opticalBlack,
@@ -1162,7 +1163,8 @@ class RecordingController(private val context: Context) {
         colorMatrix2: FloatArray? = null,
         forwardMatrix1: FloatArray? = null,
         forwardMatrix2: FloatArray? = null,
-        noiseProfile: DoubleArray? = null
+        noiseProfile: DoubleArray? = null,
+        toneProfile: String = "cine_filmic"
     ) {
         var written = 0L
         var firstFrameTs: Long? = null
@@ -1183,6 +1185,7 @@ class RecordingController(private val context: Context) {
             noiseProfile?.let { put("noiseProfile", org.json.JSONArray(it.toList())) }
             put("timestampSource", tsSource)
             put("targetFps", targetFps)
+            put("toneProfile", toneProfile)
             put("totalDropped", 0L)
             put("droppedGaps", 0)
             framingAspect?.let { put("framingAspect", it.toDouble()) }

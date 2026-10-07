@@ -160,7 +160,18 @@ fun CinemaViewfinderScreen(
     var vfBufW by remember { mutableStateOf(0) }
     var vfBufH by remember { mutableStateOf(0) }
     var vfRotation by remember { mutableStateOf(0) }
-    var selectedLook by remember { mutableStateOf("Filmic") }
+    val initialLookName = when (controls.toneProfile) {
+        "cine_hlg" -> "HLG"
+        "cine_ootf" -> "OOTF"
+        "cine_warm" -> "Warm"
+        "cine_cool" -> "Cool"
+        "cine_vintage" -> "Vintage"
+        "cine_bright" -> "Bright"
+        "cine_mono" -> "Mono"
+        "default" -> "Natural"
+        else -> "Filmic"
+    }
+    var selectedLook by remember(controls.toneProfile) { mutableStateOf(initialLookName) }
 
     // Live Scope Analyzer (15-20 FPS background analyzer for Histogram, Peaking, False Color, Zebras)
     val scopeAnalyzer = remember { ScopeAnalyzer() }
@@ -828,7 +839,21 @@ fun CinemaViewfinderScreen(
                                 supportedFps = supportedFps,
                                 maxAnalogIso = maxAnalogIso,
                                 onControlsChanged = onControlsChanged,
-                                onLookSelected = { selectedLook = it },
+                                onLookSelected = { look ->
+                                    selectedLook = look
+                                    val profId = when (look.lowercase()) {
+                                        "hlg" -> "cine_hlg"
+                                        "ootf" -> "cine_ootf"
+                                        "warm" -> "cine_warm"
+                                        "cool" -> "cine_cool"
+                                        "vintage" -> "cine_vintage"
+                                        "bright" -> "cine_bright"
+                                        "mono" -> "cine_mono"
+                                        "natural" -> "default"
+                                        else -> "cine_filmic"
+                                    }
+                                    onControlsChanged(controls.copy(toneProfile = profId))
+                                },
                                 onRawSizeSelected = onRawSizeSelected,
                                 onDismiss = { activePanel = ActivePanel.NONE }
                             )
@@ -952,7 +977,21 @@ fun CinemaViewfinderScreen(
                                 supportedFps = supportedFps,
                                 maxAnalogIso = maxAnalogIso,
                                 onControlsChanged = onControlsChanged,
-                                onLookSelected = { selectedLook = it },
+                                onLookSelected = { look ->
+                                    selectedLook = look
+                                    val profId = when (look.lowercase()) {
+                                        "hlg" -> "cine_hlg"
+                                        "ootf" -> "cine_ootf"
+                                        "warm" -> "cine_warm"
+                                        "cool" -> "cine_cool"
+                                        "vintage" -> "cine_vintage"
+                                        "bright" -> "cine_bright"
+                                        "mono" -> "cine_mono"
+                                        "natural" -> "default"
+                                        else -> "cine_filmic"
+                                    }
+                                    onControlsChanged(controls.copy(toneProfile = profId))
+                                },
                                 onRawSizeSelected = onRawSizeSelected,
                                 onDismiss = { activePanel = ActivePanel.NONE }
                             )

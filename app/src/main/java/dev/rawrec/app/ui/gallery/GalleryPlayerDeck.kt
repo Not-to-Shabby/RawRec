@@ -77,7 +77,7 @@ fun GalleryPlayerDeck(
     file: File,
     autoPlay: Boolean = true,
     onBack: () -> Unit,
-    onExportRequested: (File, Int, Bitmap?) -> Unit,
+    onExportRequested: (File, Int, Bitmap?, ColorScience.ToneProfile) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val haptics = LocalHapticFeedback.current
@@ -93,6 +93,7 @@ fun GalleryPlayerDeck(
 
     var audioPlayer by remember { mutableStateOf<RvspAudioPlayer?>(null) }
     var currentFrameIndex by remember { mutableIntStateOf(0) }
+    var frameVersion by remember { mutableIntStateOf(0) }
     var isPlaying by remember { mutableStateOf(autoPlay) }
     var isRepeat by remember { mutableStateOf(true) }
     var isMuted by remember { mutableStateOf(false) }
@@ -166,15 +167,27 @@ fun GalleryPlayerDeck(
                 runCatching {
                     val (h, raf) = Rvtool.openHeader(file.absolutePath)
                     val (scannedFrames, scannedAudio) = Rvtool.scanRecords(raf)
-                    header = h
-                    frames = scannedFrames
-                    audioRecords = scannedAudio
-                    sharedRaf = raf
-                    val player = RvspAudioPlayer(file, audioRecords)
-                    audioPlayer = player
-                    isLoaded = true
+                    val meta = runCatching { Rvtool.metaJson(raf) }.getOrDefault(emptyMap())
+                    val recordedProfileId = meta["toneProfile"]
+                    val initialProfile = if (!recordedProfileId.isNullOrBlank()) {
+                        ColorScience.ToneProfile.fromId(recordedProfileId)
+                    } else {
+                        ColorScience.ToneProfile.CINE_FILMIC
+                    }
+                    withContext(Dispatchers.Main) {
+                        header = h
+                        frames = scannedFrames
+                        audioRecords = scannedAudio
+                        sharedRaf = raf
+                        selectedProfile = initialProfile
+                        val player = RvspAudioPlayer(file, audioRecords)
+                        audioPlayer = player
+                        isLoaded = true
+                    }
                 }.onFailure {
-                    loadError = it.message ?: "Failed to open take"
+                    withContext(Dispatchers.Main) {
+                        loadError = it.message ?: "Failed to open take"
+                    }
                 }
             }
         }
@@ -212,10 +225,17 @@ fun GalleryPlayerDeck(
         }
     }
 
-    suspend fun decodeFrame(frameIdx: Int, h: Rvtool.Header, profile: ColorScience.ToneProfile): Bitmap? {
-        val cached = prefetchCache.remove(frameIdx)
-        if (cached != null && !cached.isRecycled) {
-            return cached
+    suspend fun decodeFrame(
+        frameIdx: Int,
+        h: Rvtool.Header,
+        profile: ColorScience.ToneProfile,
+        forceFresh: Boolean = false
+    ): Bitmap? {
+        if (!forceFresh) {
+            val cached = prefetchCache.remove(frameIdx)
+            if (cached != null && !cached.isRecycled) {
+                return cached
+            }
         }
         val frameRec = frames.getOrNull(frameIdx) ?: return null
         return withContext(Dispatchers.IO) {
@@ -262,7 +282,7 @@ fun GalleryPlayerDeck(
                 val t3 = System.currentTimeMillis()
 
                 var targetBmp = bitmapPool.poll()
-                if (targetBmp == null || targetBmp.width != outW || targetBmp.height != outH || targetBmp.isRecycled) {
+                if (targetBmp == null || targetBmp === currentBitmap || targetBmp.width != outW || targetBmp.height != outH || targetBmp.isRecycled) {
                     targetBmp = Bitmap.createBitmap(outW, outH, Bitmap.Config.ARGB_8888)
                 }
 
@@ -370,9 +390,10 @@ fun GalleryPlayerDeck(
         if (isPlaying || !isLoaded || frames.isEmpty() || header == null) return@LaunchedEffect
         val h = header ?: return@LaunchedEffect
         isDecodingFrame = true
-        val bmp = decodeFrame(currentFrameIndex, h, selectedProfile)
+        val bmp = decodeFrame(currentFrameIndex, h, selectedProfile, forceFresh = true)
         if (bmp != null) {
             currentBitmap = bmp
+            frameVersion++
         }
         isDecodingFrame = false
     }
@@ -400,6 +421,7 @@ fun GalleryPlayerDeck(
             if (bmp != null) {
                 val old = currentBitmap
                 currentBitmap = bmp
+                frameVersion++
                 if (old != null && old !== bmp && !old.isRecycled && !bitmapPool.contains(old)) {
                     bitmapPool.offer(old)
                 }
@@ -593,7 +615,7 @@ fun GalleryPlayerDeck(
                                     .clickable {
                                         audioPlayer?.pause()
                                         isPlaying = false
-                                        onExportRequested(file, videoRotation, currentBitmap)
+                                        onExportRequested(file, videoRotation, currentBitmap, selectedProfile)
                                     }
                             ) {
                                 Row(
@@ -688,13 +710,15 @@ fun GalleryPlayerDeck(
                                 modifier = Modifier.fillMaxSize()
                             )
                         } else {
-                            currentBitmap?.let { bmp ->
-                                Image(
-                                    bitmap = bmp.asImageBitmap(),
-                                    contentDescription = "Video Frame",
-                                    modifier = Modifier.fillMaxSize(),
-                                    contentScale = ContentScale.Fit
-                                )
+                            androidx.compose.runtime.key(frameVersion, selectedProfile) {
+                                currentBitmap?.let { bmp ->
+                                    Image(
+                                        bitmap = bmp.asImageBitmap(),
+                                        contentDescription = "Video Frame",
+                                        modifier = Modifier.fillMaxSize(),
+                                        contentScale = ContentScale.Fit
+                                    )
+                                }
                             }
                         }
                     }
@@ -784,6 +808,7 @@ fun GalleryPlayerDeck(
                                         prefetchCache.values.forEach { if (!it.isRecycled && !bitmapPool.contains(it)) bitmapPool.offer(it) }
                                         prefetchCache.clear()
                                         selectedProfile = profile
+                                        frameVersion++
                                     }
                                 ) {
                                     Text(
