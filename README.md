@@ -9,34 +9,48 @@
 
 RawRec captures untouched, uncompressed 10-bit / 12-bit / 14-bit Bayer frames directly from mobile camera sensors via Android Camera2 `RAW_SENSOR`, completely bypassing manufacturer computational photography and ISP post-processing (noise reduction, edge sharpening, and tone-mapping).
 
-Frames and synchronized 48 kHz linear PCM audio are streamed in real time into the open, append-only **RawRec Video Sensor Payload (`.rvsp`)** container, supported by desktop studio playback tools (`rvtool`), a single-header C++17 library, a standalone Python reference decoder, and 1:1 export into **Adobe CinemaDNG 1.4** and **BT.2100 HLG MP4**.
+Frames and synchronized 48 kHz linear PCM or 32-bit float audio are streamed in real time into the open, append-only **RawRec Video Sensor Payload (`.rvsp`)** container, supported by an on-device Studio Gallery, desktop playback tools (`rvtool`), a single-header C++17 library, a standalone Python reference decoder, and 1:1 export into **Adobe CinemaDNG 1.4** and **BT.2100 HLG MP4**.
 
 ---
 
 ## Key Capabilities
 
-* **Hardware ISP Bypass (Raw Sensor Capture)**: Direct Camera2 DMA streaming of unbinned and binned 10-bit/12-bit Bayer pixel arrays.
-* **Open RVSP Container Format**: Crash-resilient, append-only binary container designed for high-throughput streaming with zero disk seeks. Battery disconnects or system interrupts never corrupt prior frames.
+* **Hardware ISP Bypass (Raw Sensor Capture)**: Direct Camera2 DMA streaming of unbinned (up to 50MP on IMX882) and binned 10-bit, 12-bit, and 14-bit Bayer pixel arrays.
+* **Open RVSP Container Format (`.rvsp`)**:
+  * **Dual-Mode Seeking (`IDXT` Index Trailer)**: Instant sub-millisecond (< 2 ms) file opening and timeline scrubbing for 50+ GB takes, with automatic fallback to sequential torn-tail scanning for crash resilience.
+  * **Per-Record Integrity Checksums**: Hardware-accelerated 32-bit CRC32 checksums on every video and audio record, detecting silent flash storage bitflips.
+  * **Crash-Tolerant Append Streaming**: Header written at $t=0$; abrupt battery disconnects or Android LMK kills never corrupt prior frames.
+* **Cinema Audio Architecture**:
+  * **32-Bit Float Audio Capture**: $1,528\text{ dB}$ of unclipped dynamic range via `AudioFormat.ENCODING_PCM_FLOAT`, eliminating digital clipping on loud sound spikes.
+  * **Real-Time Stereo VU / Peak Meter**: Ballistic PPM metering with color-coded dBFS readouts (-60 to +12 dBFS).
+  * **Broadcast Wave Format (BWF)**: Exports standard 32-bit float RIFF WAV (`0x0003` `WAVE_FORMAT_IEEE_FLOAT`) and 16-bit integer PCM WAV with SMPTE timecode.
 * **High-Performance Native Pipeline (`librawrec.so`)**:
-  * 2-way sliced row-parallel NEON MIPI CSI-2 RAW10 bit-packing (4 pixels into 5 bytes in 2–5 ms).
-  * Real-time multi-threaded Zstandard (`ZSTD`) frame compression, cutting storage bandwidth by ~55%.
-  * Zero-allocation pre-allocated buffer pool (`payloadPool`), eliminating Android ART garbage collection freezes.
-  * Verified **16 KB page alignment** for modern Android 15+ kernels.
-* **Pro Viewfinder & Scopes**:
-  * **Cinema Lookaround Scrim**: 55% dimmed matte keeping off-screen boom mics and subjects visible outside the active recording window.
-  * **Stock Aspect Ratios**: Full, Widescreen 2.39:1, 16:9, 4:3, and 1:1 with WYSIWYG sensor-level cropping.
-  * **Continuous Presentation Slider**: Smooth interpolation from 0% (Accurate optical fit) to 100% (Fill screen).
-  * **Live Cinema Scopes**: Background 16 FPS zero-allocation pixel tap providing calibrated IRE RGB+Luma histogram, neon green focus peaking, 16-zone false color heatmap, and diagonal crawling zebras.
+  * **Vectorized NEON Bit-Packing**: 2-way sliced row-parallel NEON packing for MIPI RAW10, RAW12, and RAW14 (2–5 ms per frame).
+  * **Hardware Cache Exploitation**: L1 hardware cache prefetching (`PRFM`), private L2-bounded Zstandard dictionary window (`windowLog = 17` / 128 KB), and shared L3 buffer recycling.
+  * **Scene-Adaptive Entropy Governor**: Closed-loop monitor dynamically scaling Zstd levels (`-3` $\rightarrow$ `-6` $\rightarrow$ `-9` / store) to guarantee 0 dropped frames under high-ISO noise or complex scenes.
+  * **Linux Kernel Syscalls**: Direct page cache eviction via `posix_fadvise(POSIX_FADV_DONTNEED)` and CPU core affinity pinning via `sched_setaffinity`.
+  * **16 KB Page Alignment**: Verified LOAD segments for Android 15+ kernels.
+* **Material Design 3 Expressive UI & Scopes**:
+  * **Clean-Feed Pillarbox Architecture**: Zero UI obstruction over the 4:3 camera image in landscape.
+  * **Left-Thumb Pillarbox**: Vertical follow-focus wheel with barrel scale ticks, Cyan A & Amber B witness pins, one-tap `RACK A➔B` pull trigger, and vertical assist toggles (`Peak`, `False`, `Zebra`, `Hist`, `Grid`, `Aspect`, `Mirror`).
+  * **Right-Thumb Pillarbox**: Compact 146dp exposure dock with optical lens switcher (`RawRecIcons.LensIris`), `FPS`/`SHUT`/`ISO`/`WB`/`LOOK`/`GATE` matrix, and isolated right-thumb record trigger.
+  * **Active Recording Perimeter Tally**: 2px pulsing red outline drawn directly around the active recording frame.
+  * **Viewfinder Pipelines**: Dual backend support (OpenGL ES 3.0 with live 3D `.cube` LUT shader vs. TextureView with CPU scopes).
+  * **Front Camera**: Upright orientation with dynamic `Mirror` / `True` selfie toggle.
+* **On-Device Studio Gallery**:
+  * Integrated review deck with synchronized 48 kHz PCM and 32-bit float audio playback.
+  * Live color look grading (Filmic, Rec.709, HLG HDR, Linear, Warm, Cool, Vintage, B&W Mono).
+  * In-app GPU-accelerated BT.2100 HLG MP4 export and single-IFD Adobe CinemaDNG 1.4 sequence export.
 * **Desktop Studio Deck (`rvtool`)**:
   * Cross-platform Swing GUI and CLI with nanosecond hardware-paced playback and SMPTE `HH:MM:SS:FF` timecode.
   * Synchronized 48 kHz stereo audio monitoring and timeline playback.
   * Per-frame ISO and shutter exposure time telemetry curve sparklines (`CurvePlotPanel`).
-  * 16 clean-room analytical `ToneProfile` curves (Filmic, Rec.2100 HLG, Vintage, Monochrome, etc.) and `.cube` 3D LUT import.
+  * 16 clean-room analytical `ToneProfile` curves and `.cube` 3D LUT import.
   * Multi-backend compute acceleration (OpenCL, Vulkan, multi-threaded CPU).
   * Batch export processing for entire folders of `.rvsp` takes into CinemaDNG sequences or HLG MP4s.
 * **Open Interoperability**:
   * **Adobe CinemaDNG 1.4**: Exports single-IFD0 sequences with embedded colorimetry and Adobe opcodes (`OpcodeList1` GainMap and `OpcodeList3` WarpRectilinear) for native lens correction in DaVinci Resolve.
-  * **Single-Header C++17 Library**: Portable, zero-dependency [`include/rvsp.h`](include/rvsp.h) for custom NLE/OFX integrations.
+  * **Single-Header C++17 Library**: Portable, zero-dependency [`include/rvsp.h`](include/rvsp.h) with `IDXT` index seeking and MIPI unpacking.
   * **Standalone Python 3 Reference Decoder**: Pure Python [`tools/rvsp_decode.py`](tools/rvsp_decode.py) for ML pipelines and color science research.
 
 ---
@@ -83,7 +97,7 @@ Frames and synchronized 48 kHz linear PCM audio are streamed in real time into t
 # Build Debug APK
 ./gradlew :app:assembleDebug
 
-# Run Unit Tests (181 tests across 24 classes)
+# Run Unit Tests (194 tests across 26 classes)
 ./gradlew :app:testDebugUnitTest
 
 # Install on connected Android device via ADB
@@ -110,13 +124,13 @@ powershell -File tools/rvtool.ps1 info take.rvsp
 # Extract take into a single-IFD0 CinemaDNG frame sequence with audio
 powershell -File tools/rvtool.ps1 extract take.rvsp output_dir/
 
-# Export BT.2100 HLG MP4 with 16-bit stereo PCM audio
+# Export BT.2100 HLG MP4 with normalized stereo audio
 powershell -File tools/rvtool.ps1 mp4 take.rvsp take_hlg.mp4
 
 # Batch process an entire directory of takes
 powershell -File tools/rvtool.ps1 batch input_folder/ output_folder/ dng
 
-# Extract linear PCM audio track to standard RIFF WAV
+# Extract linear PCM or 32-bit float audio track to standard RIFF WAV
 powershell -File tools/rvtool.ps1 wav take.rvsp audio.wav
 
 # Validate Adobe DNG tags on extracted frame
