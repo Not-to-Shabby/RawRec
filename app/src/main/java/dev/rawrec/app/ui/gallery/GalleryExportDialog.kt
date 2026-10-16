@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+
 package dev.rawrec.app.ui.gallery
 
 import android.content.Context
@@ -26,6 +28,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -33,6 +36,10 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedCard
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -359,7 +366,8 @@ fun GalleryExportDialog(
 
                                 Surface(
                                     shape = MaterialTheme.shapes.extraSmall,
-                                    color = Color.Black.copy(alpha = 0.75f),
+                                    color = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.88f),
+                                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
                                     modifier = Modifier
                                         .align(Alignment.BottomEnd)
                                         .padding(6.dp)
@@ -376,7 +384,7 @@ fun GalleryExportDialog(
                         }
                     }
 
-                    // Video Rotation Selector & Preview
+                    // Video Rotation Selector (MD3 SingleChoiceSegmentedButtonRow)
                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text(
                             "Export Orientation / Rotation",
@@ -384,41 +392,29 @@ fun GalleryExportDialog(
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
 
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            listOf(0, 90, 180, 270).forEach { deg ->
+                        val rotations = listOf(0, 90, 180, 270)
+                        SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                            rotations.forEachIndexed { idx, deg ->
                                 val isSel = selectedRotation == deg
-                                Surface(
-                                    shape = MaterialTheme.shapes.extraSmall,
-                                    color = if (isSel) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHighest,
-                                    border = if (isSel) BorderStroke(1.dp, MaterialTheme.colorScheme.primary) else BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)),
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .clickable { selectedRotation = deg }
-                                ) {
-                                    Row(
-                                        modifier = Modifier.padding(vertical = 8.dp),
-                                        horizontalArrangement = Arrangement.Center,
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
+                                SegmentedButton(
+                                    selected = isSel,
+                                    onClick = { selectedRotation = deg },
+                                    shape = SegmentedButtonDefaults.itemShape(index = idx, count = rotations.size),
+                                    icon = {
                                         Icon(
                                             RawRecIcons.Rotate,
                                             contentDescription = null,
-                                            tint = if (isSel) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
-                                            modifier = Modifier.size(13.dp)
+                                            modifier = Modifier.size(14.dp)
                                         )
-                                        Spacer(Modifier.width(4.dp))
+                                    },
+                                    label = {
                                         Text(
                                             "$deg°",
                                             style = DeckLabelStyle,
-                                            fontWeight = if (isSel) FontWeight.Bold else FontWeight.Normal,
-                                            color = if (isSel) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
+                                            fontWeight = if (isSel) FontWeight.Bold else FontWeight.Medium
                                         )
                                     }
-                                }
+                                )
                             }
                         }
                     }
@@ -432,13 +428,14 @@ fun GalleryExportDialog(
                         )
 
                         Box {
-                            Surface(
-                                shape = MaterialTheme.shapes.small,
-                                color = MaterialTheme.colorScheme.surface,
-                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.6f)),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable { dropdownExpanded = true }
+                            OutlinedCard(
+                                onClick = { dropdownExpanded = true },
+                                shape = MaterialTheme.shapes.medium,
+                                colors = CardDefaults.outlinedCardColors(
+                                    containerColor = MaterialTheme.colorScheme.surfaceContainerHighest
+                                ),
+                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary),
+                                modifier = Modifier.fillMaxWidth()
                             ) {
                                 Row(
                                     modifier = Modifier
@@ -450,7 +447,7 @@ fun GalleryExportDialog(
                                     Text(
                                         selectedProfile.displayName,
                                         style = MaterialTheme.typography.bodyMedium,
-                                        fontWeight = FontWeight.Medium,
+                                        fontWeight = FontWeight.SemiBold,
                                         color = MaterialTheme.colorScheme.primary
                                     )
                                     Icon(
@@ -469,12 +466,23 @@ fun GalleryExportDialog(
                                 ColorScience.ToneProfile.values()
                                     .filter { it != ColorScience.ToneProfile.CUSTOM_LUT }
                                     .forEach { profile ->
+                                        val isSel = profile == selectedProfile
                                         DropdownMenuItem(
+                                            leadingIcon = if (isSel) {
+                                                {
+                                                    Icon(
+                                                        RawRecIcons.Check,
+                                                        contentDescription = null,
+                                                        tint = MaterialTheme.colorScheme.primary,
+                                                        modifier = Modifier.size(16.dp)
+                                                    )
+                                                }
+                                            } else null,
                                             text = {
                                                 Text(
                                                     profile.displayName,
-                                                    fontWeight = if (profile == selectedProfile) FontWeight.Bold else FontWeight.Normal,
-                                                    color = if (profile == selectedProfile) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                                                    fontWeight = if (isSel) FontWeight.Bold else FontWeight.Normal,
+                                                    color = if (isSel) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
                                                 )
                                             },
                                             onClick = {
@@ -521,22 +529,36 @@ fun GalleryExportDialog(
 
                 // Success State
                 if (exportedFile != null) {
-                    Surface(
-                        shape = MaterialTheme.shapes.small,
-                        color = Color(0xFF1B3D2B),
-                        border = BorderStroke(1.dp, Color(0xFF34C759))
+                    OutlinedCard(
+                        shape = MaterialTheme.shapes.medium,
+                        colors = CardDefaults.outlinedCardColors(
+                            containerColor = MaterialTheme.colorScheme.primaryContainer,
+                            contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                        ),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary)
                     ) {
-                        Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Text(
-                                "✓ EXPORT COMPLETE",
-                                style = MaterialTheme.typography.labelMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = Color(0xFF34C759)
-                            )
+                        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Icon(
+                                    RawRecIcons.Check,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Text(
+                                    "EXPORT COMPLETE",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                                )
+                            }
                             Text(
                                 exportedFile?.absolutePath ?: "",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = Color.White
+                                style = dev.rawrec.app.ui.theme.TelemetryStyle,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
                             )
                         }
                     }

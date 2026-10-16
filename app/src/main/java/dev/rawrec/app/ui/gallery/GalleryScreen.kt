@@ -1,10 +1,11 @@
+@file:OptIn(
+    androidx.compose.material3.ExperimentalMaterial3Api::class,
+    androidx.compose.material3.ExperimentalMaterial3ExpressiveApi::class
+)
+
 package dev.rawrec.app.ui.gallery
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -22,11 +23,24 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.FilledIconButton
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.FilledTonalIconButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedCard
+import androidx.compose.material3.OutlinedIconButton
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -35,11 +49,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import dev.rawrec.app.capture.RecordingController
 import dev.rawrec.app.ui.components.RawRecIcons
 import dev.rawrec.app.ui.theme.DeckLabelStyle
@@ -101,28 +112,27 @@ fun GalleryScreen(
             color = MaterialTheme.colorScheme.background
         ) {
             Column(modifier = Modifier.fillMaxSize()) {
-                // 1. Header Bar
-                Surface(
-                    color = MaterialTheme.colorScheme.surfaceContainer,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 12.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
+                // 1. MD3 TopAppBar
+                TopAppBar(
+                    title = {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
-                            Icon(
-                                RawRecIcons.Movie,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(24.dp)
-                            )
+                            Surface(
+                                shape = MaterialTheme.shapes.small,
+                                color = MaterialTheme.colorScheme.primaryContainer,
+                                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                                modifier = Modifier.size(36.dp)
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(
+                                        RawRecIcons.Movie,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                            }
                             Column {
                                 Text(
                                     "STUDIO GALLERY",
@@ -137,58 +147,67 @@ fun GalleryScreen(
                                 )
                             }
                         }
-
-                        Surface(
-                            shape = MaterialTheme.shapes.extraSmall,
-                            color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
-                            modifier = Modifier
-                                .height(36.dp)
-                                .clickable { onClose() }
+                    },
+                    actions = {
+                        FilledTonalButton(
+                            onClick = onClose,
+                            modifier = Modifier.padding(end = 8.dp)
                         ) {
-                            Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(horizontal = 14.dp)) {
-                                Text(
-                                    "CLOSE",
-                                    style = DeckLabelStyle,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                            }
+                            Icon(
+                                RawRecIcons.Close,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(Modifier.width(6.dp))
+                            Text("Close")
                         }
-                    }
-                }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                        titleContentColor = MaterialTheme.colorScheme.onSurface
+                    )
+                )
 
-                // 2. Filter Tabs
+                // 2. MD3 SingleChoiceSegmentedButtonRow Filter Bar
                 Surface(
-                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    color = MaterialTheme.colorScheme.surfaceContainerLow,
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Row(
+                    Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 6.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                            .padding(horizontal = 16.dp, vertical = 8.dp)
                     ) {
-                        GalleryFilter.values().forEach { filter ->
-                            val isSel = filter == selectedFilter
-                            Surface(
-                                shape = MaterialTheme.shapes.extraSmall,
-                                color = if (isSel) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHighest,
-                                border = if (isSel) BorderStroke(1.dp, MaterialTheme.colorScheme.primary) else null,
-                                modifier = Modifier.clickable { selectedFilter = filter }
-                            ) {
-                                Text(
-                                    text = filter.label,
-                                    style = DeckLabelStyle,
-                                    fontWeight = if (isSel) FontWeight.Bold else FontWeight.Normal,
-                                    color = if (isSel) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                        val filters = GalleryFilter.values()
+                        SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                            filters.forEachIndexed { index, filter ->
+                                val isSel = filter == selectedFilter
+                                SegmentedButton(
+                                    selected = isSel,
+                                    onClick = { selectedFilter = filter },
+                                    shape = SegmentedButtonDefaults.itemShape(index = index, count = filters.size),
+                                    icon = {
+                                        SegmentedButtonDefaults.Icon(active = isSel) {
+                                            Icon(
+                                                imageVector = RawRecIcons.Check,
+                                                contentDescription = null,
+                                                modifier = Modifier.size(SegmentedButtonDefaults.IconSize)
+                                            )
+                                        }
+                                    },
+                                    label = {
+                                        Text(
+                                            text = filter.label,
+                                            style = DeckLabelStyle,
+                                            fontWeight = if (isSel) FontWeight.Bold else FontWeight.Medium
+                                        )
+                                    }
                                 )
                             }
                         }
                     }
                 }
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 
                 // 3. Take Cards List
                 if (filteredRecordings.isEmpty()) {
@@ -301,24 +320,26 @@ private fun TakeCard(
         sdf.format(Date(file.lastModified()))
     }
 
-    Surface(
-        shape = MaterialTheme.shapes.small,
-        color = MaterialTheme.colorScheme.surfaceContainer,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)),
+    OutlinedCard(
+        onClick = onPlay,
+        shape = MaterialTheme.shapes.large,
+        colors = CardDefaults.outlinedCardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainer,
+            contentColor = MaterialTheme.colorScheme.onSurface
+        ),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
         modifier = Modifier.fillMaxWidth()
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(12.dp),
+                .padding(horizontal = 16.dp, vertical = 12.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
             // Left Info
             Column(
-                modifier = Modifier
-                    .weight(1f)
-                    .clickable { onPlay() },
+                modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 Row(
@@ -340,7 +361,7 @@ private fun TakeCard(
                     }
                     Text(
                         text = file.name,
-                        style = MaterialTheme.typography.bodyMedium,
+                        style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface
                     )
@@ -348,71 +369,64 @@ private fun TakeCard(
 
                 Text(
                     text = "$dateStr · ${formatBytes(file.length())}",
-                    style = DeckLabelStyle,
+                    style = dev.rawrec.app.ui.theme.TelemetryStyle,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
 
-            // Right Action Buttons
+            // Right MD3 Action IconButtons
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 // Play Button
-                Surface(
-                    shape = MaterialTheme.shapes.extraSmall,
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier
-                        .size(34.dp)
-                        .clickable { onPlay() }
+                FilledIconButton(
+                    onClick = onPlay,
+                    colors = IconButtonDefaults.filledIconButtonColors(
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary
+                    ),
+                    modifier = Modifier.size(40.dp)
                 ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(
-                            RawRecIcons.Play,
-                            contentDescription = "Play Take",
-                            tint = MaterialTheme.colorScheme.onPrimary,
-                            modifier = Modifier.size(16.dp)
-                        )
-                    }
+                    Icon(
+                        RawRecIcons.Play,
+                        contentDescription = "Play Take",
+                        modifier = Modifier.size(18.dp)
+                    )
                 }
 
                 // Export Button (Only for RVSP files)
                 if (isRvsp) {
-                    Surface(
-                        shape = MaterialTheme.shapes.extraSmall,
-                        color = MaterialTheme.colorScheme.surfaceContainerHighest,
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
-                        modifier = Modifier
-                            .size(34.dp)
-                            .clickable { onExport() }
+                    FilledTonalIconButton(
+                        onClick = onExport,
+                        colors = IconButtonDefaults.filledTonalIconButtonColors(
+                            containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                            contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                        ),
+                        modifier = Modifier.size(40.dp)
                     ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(
-                                RawRecIcons.Export,
-                                contentDescription = "Export Take",
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(16.dp)
-                            )
-                        }
+                        Icon(
+                            RawRecIcons.Export,
+                            contentDescription = "Export Take",
+                            modifier = Modifier.size(18.dp)
+                        )
                     }
                 }
 
                 // Delete Button
-                Surface(
-                    shape = MaterialTheme.shapes.extraSmall,
-                    color = MaterialTheme.colorScheme.surfaceContainerHighest,
-                    modifier = Modifier
-                        .size(34.dp)
-                        .clickable { onDelete() }
+                OutlinedIconButton(
+                    onClick = onDelete,
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                    colors = IconButtonDefaults.outlinedIconButtonColors(
+                        contentColor = MaterialTheme.colorScheme.error
+                    ),
+                    modifier = Modifier.size(40.dp)
                 ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(
-                            RawRecIcons.Trash,
-                            contentDescription = "Delete Take",
-                            tint = MaterialTheme.colorScheme.error,
-                            modifier = Modifier.size(16.dp)
-                        )
-                    }
+                    Icon(
+                        RawRecIcons.Trash,
+                        contentDescription = "Delete Take",
+                        modifier = Modifier.size(18.dp)
+                    )
                 }
             }
         }

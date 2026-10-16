@@ -33,16 +33,21 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -450,137 +455,160 @@ fun CinemaViewfinderScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // Left: Recording tally dot, Timecode, STBY/REC badge, Size & Drops
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    // Left: M3 Expressive Timecode & Tally Stadium Capsule
+                    Surface(
+                        shape = CircleShape,
+                        color = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.92f),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
                     ) {
-                        Box(
-                            Modifier
-                                .size(10.dp)
-                                .clip(CircleShape)
-                                .background(if (stats.active) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.outline)
-                        )
-                        Text(
-                            text = if (stats.active) formatTimecode(stats.elapsedMs, controls.targetFps) else "00:00:00:00",
-                            style = DeckTimecodeStyle,
-                            color = if (stats.active) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
-                        )
-                        Text(
-                            text = if (stats.active) "REC" else "STBY",
-                            style = DeckLabelStyle,
-                            color = if (stats.active) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
-                        )
-                        if (stats.active) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
                             Surface(
-                                shape = MaterialTheme.shapes.extraSmall,
-                                color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.85f),
-                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+                                shape = CircleShape,
+                                color = if (stats.active) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.primaryContainer
                             ) {
                                 Row(
-                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                    verticalAlignment = Alignment.CenterVertically
+                                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(5.dp)
                                 ) {
-                                    Text(
-                                        text = formatSize(stats.bytesWritten),
-                                        style = DeckLabelStyle,
-                                        color = MaterialTheme.colorScheme.onSurface
+                                    Box(
+                                        Modifier
+                                            .size(7.dp)
+                                            .clip(CircleShape)
+                                            .background(if (stats.active) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary)
                                     )
                                     Text(
-                                        text = if (stats.dropped == 0L) "0 DROP" else "${stats.dropped} DROP",
+                                        text = if (stats.active) "REC" else "STBY",
                                         style = DeckLabelStyle,
-                                        color = if (stats.dropped == 0L) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
-                                        fontWeight = if (stats.dropped > 0L) FontWeight.Bold else FontWeight.Normal
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (stats.active) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onPrimaryContainer
                                     )
-                                    if (stats.thermalStage != "NONE") {
+                                }
+                            }
+                            Text(
+                                text = if (stats.active) formatTimecode(stats.elapsedMs, controls.targetFps) else "00:00:00:00",
+                                style = DeckTimecodeStyle,
+                                color = if (stats.active) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
+                            )
+                            if (stats.active) {
+                                Surface(
+                                    shape = CircleShape,
+                                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
                                         Text(
-                                            text = stats.thermalStage,
+                                            text = formatSize(stats.bytesWritten),
                                             style = DeckLabelStyle,
-                                            color = MaterialTheme.colorScheme.error,
-                                            fontWeight = FontWeight.Bold
+                                            color = MaterialTheme.colorScheme.onSurface
                                         )
+                                        Text(
+                                            text = if (stats.dropped == 0L) "0 DROP" else "${stats.dropped} DROP",
+                                            style = DeckLabelStyle,
+                                            color = if (stats.dropped == 0L) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                                            fontWeight = if (stats.dropped > 0L) FontWeight.Bold else FontWeight.Normal
+                                        )
+                                        if (stats.thermalStage != "NONE") {
+                                            Text(
+                                                text = stats.thermalStage,
+                                                style = DeckLabelStyle,
+                                                color = MaterialTheme.colorScheme.tertiary,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        }
                                     }
                                 }
                             }
                         }
                     }
 
-                    // Right: Mini Histogram & Settings Button
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    // Right: Unified M3 Expressive Telemetry & Navigation Capsule
+                    Surface(
+                        shape = CircleShape,
+                        color = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.92f),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
                     ) {
-                        val effectiveHistogram = if (histogramActive) (liveHistogram ?: histogram) else null
-                        if (effectiveHistogram != null) {
-                            Surface(
-                                shape = MaterialTheme.shapes.extraSmall,
-                                color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.85f),
-                                modifier = Modifier.size(width = 68.dp, height = 30.dp)
-                            ) {
-                                HistogramScopeView(
-                                    histogram = effectiveHistogram,
-                                    modifier = Modifier.padding(2.dp).fillMaxSize()
-                                )
-                            }
-                        }
-                        Surface(
-                            shape = MaterialTheme.shapes.extraSmall,
-                            color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.85f),
-                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
-                            modifier = Modifier
-                                .size(34.dp)
-                                .clickable { onOpenGallery() }
+                        Row(
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
-                            Box(contentAlignment = Alignment.Center) {
+                            val effectiveHistogram = if (histogramActive) (liveHistogram ?: histogram) else null
+                            if (effectiveHistogram != null) {
+                                Surface(
+                                    shape = RoundedCornerShape(16.dp),
+                                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                                    modifier = Modifier.size(width = 72.dp, height = 36.dp)
+                                ) {
+                                    HistogramScopeView(
+                                        histogram = effectiveHistogram,
+                                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 3.dp).fillMaxSize()
+                                    )
+                                }
+                            }
+                            FilledTonalIconButton(
+                                onClick = onOpenGallery,
+                                shape = CircleShape,
+                                colors = IconButtonDefaults.filledTonalIconButtonColors(
+                                    containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                                    contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                                ),
+                                modifier = Modifier.size(36.dp)
+                            ) {
                                 Icon(
                                     RawRecIcons.Movie,
                                     contentDescription = "Gallery",
-                                    tint = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.size(18.dp)
+                                    modifier = Modifier.size(17.dp).rotateIcon()
                                 )
                             }
-                        }
-                        Surface(
-                            shape = MaterialTheme.shapes.extraSmall,
-                            color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.85f),
-                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
-                            modifier = Modifier
-                                .size(34.dp)
-                                .clickable { onOpenSettings() }
-                        ) {
-                            Box(contentAlignment = Alignment.Center) {
+                            FilledTonalIconButton(
+                                onClick = onOpenSettings,
+                                shape = CircleShape,
+                                colors = IconButtonDefaults.filledTonalIconButtonColors(
+                                    containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                                    contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                                ),
+                                modifier = Modifier.size(36.dp)
+                            ) {
                                 Icon(
                                     RawRecIcons.Settings,
                                     contentDescription = "Settings",
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.size(18.dp)
+                                    modifier = Modifier.size(17.dp).rotateIcon()
                                 )
                             }
                         }
                     }
                 }
 
-                // Row 2: Centered Scopes Quick Strip
+                // Row 2: Centered M3 Expressive Scopes Floating Toolbar
                 Box(
                     modifier = Modifier.fillMaxWidth(),
                     contentAlignment = Alignment.Center
                 ) {
                     Surface(
-                        shape = MaterialTheme.shapes.small,
-                        color = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.85f),
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+                        shape = RoundedCornerShape(24.dp),
+                        color = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.92f),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
                     ) {
                         Row(
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
                             horizontalArrangement = Arrangement.spacedBy(6.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            IconToggle(RawRecIcons.Peaks, "Peaking", peakingActive) { peakingActive = !peakingActive }
-                            IconToggle(RawRecIcons.FalseColor, "False color", falseColorActive) { falseColorActive = !falseColorActive }
-                            IconToggle(RawRecIcons.Zebra, "Zebras", zebrasActive) { zebrasActive = !zebrasActive }
-                            IconToggle(RawRecIcons.Histogram, "Histogram", histogramActive) { histogramActive = !histogramActive }
-                            IconToggle(RawRecIcons.Grid, "Grid", gridActive) { gridActive = !gridActive }
+                            IconToggle(RawRecIcons.Peaks, "Peaking", peakingActive, label = "Peak") { peakingActive = !peakingActive }
+                            IconToggle(RawRecIcons.FalseColor, "False color", falseColorActive, label = "False") { falseColorActive = !falseColorActive }
+                            IconToggle(RawRecIcons.Zebra, "Zebras", zebrasActive, label = "Zebra") { zebrasActive = !zebrasActive }
+                            IconToggle(RawRecIcons.Histogram, "Histogram", histogramActive, label = "Hist") { histogramActive = !histogramActive }
+                            IconToggle(RawRecIcons.Grid, "Grid", gridActive, label = "Grid") { gridActive = !gridActive }
                             IconToggle(
                                 icon = RawRecIcons.Aspect,
                                 contentDescription = "Framing",
@@ -625,78 +653,97 @@ fun CinemaViewfinderScreen(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Left: Recording tally dot, Timecode, STBY/REC badge, Size & Drops
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                // Left: M3 Expressive Timecode & Tally Stadium Capsule
+                Surface(
+                    shape = CircleShape,
+                    color = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.92f),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
                 ) {
-                    Box(
-                        Modifier
-                            .size(10.dp)
-                            .clip(CircleShape)
-                            .background(if (stats.active) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.outline)
-                    )
-                    Text(
-                        text = if (stats.active) formatTimecode(stats.elapsedMs, controls.targetFps) else "00:00:00:00",
-                        style = DeckTimecodeStyle,
-                        color = if (stats.active) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
-                    )
-                    Text(
-                        text = if (stats.active) "REC" else "STBY",
-                        style = DeckLabelStyle,
-                        color = if (stats.active) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
-                    )
-                    if (stats.active) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
                         Surface(
-                            shape = MaterialTheme.shapes.extraSmall,
-                            color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.85f),
-                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+                            shape = CircleShape,
+                            color = if (stats.active) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.primaryContainer
                         ) {
                             Row(
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                verticalAlignment = Alignment.CenterVertically
+                                modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(5.dp)
                             ) {
-                                Text(
-                                    text = formatSize(stats.bytesWritten),
-                                    style = DeckLabelStyle,
-                                    color = MaterialTheme.colorScheme.onSurface
+                                Box(
+                                    Modifier
+                                        .size(7.dp)
+                                        .clip(CircleShape)
+                                        .background(if (stats.active) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary)
                                 )
                                 Text(
-                                    text = if (stats.dropped == 0L) "0 DROP" else "${stats.dropped} DROP",
+                                    text = if (stats.active) "REC" else "STBY",
                                     style = DeckLabelStyle,
-                                    color = if (stats.dropped == 0L) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
-                                    fontWeight = if (stats.dropped > 0L) FontWeight.Bold else FontWeight.Normal
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (stats.active) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onPrimaryContainer
                                 )
-                                if (stats.thermalStage != "NONE") {
+                            }
+                        }
+                        Text(
+                            text = if (stats.active) formatTimecode(stats.elapsedMs, controls.targetFps) else "00:00:00:00",
+                            style = DeckTimecodeStyle,
+                            color = if (stats.active) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
+                        )
+                        if (stats.active) {
+                            Surface(
+                                shape = CircleShape,
+                                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
                                     Text(
-                                        text = stats.thermalStage,
+                                        text = formatSize(stats.bytesWritten),
                                         style = DeckLabelStyle,
-                                        color = MaterialTheme.colorScheme.error,
-                                        fontWeight = FontWeight.Bold
+                                        color = MaterialTheme.colorScheme.onSurface
                                     )
+                                    Text(
+                                        text = if (stats.dropped == 0L) "0 DROP" else "${stats.dropped} DROP",
+                                        style = DeckLabelStyle,
+                                        color = if (stats.dropped == 0L) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                                        fontWeight = if (stats.dropped > 0L) FontWeight.Bold else FontWeight.Normal
+                                    )
+                                    if (stats.thermalStage != "NONE") {
+                                        Text(
+                                            text = stats.thermalStage,
+                                            style = DeckLabelStyle,
+                                            color = MaterialTheme.colorScheme.tertiary,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
                                 }
                             }
                         }
                     }
                 }
 
-                // Center: Compact Scopes Quick Strip
+                // Center: M3 Expressive Scopes Floating Toolbar
                 Surface(
-                    shape = MaterialTheme.shapes.small,
-                    color = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.85f),
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+                    shape = RoundedCornerShape(24.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.92f),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
                 ) {
                     Row(
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        IconToggle(RawRecIcons.Peaks, "Peaking", peakingActive) { peakingActive = !peakingActive }
-                        IconToggle(RawRecIcons.FalseColor, "False color", falseColorActive) { falseColorActive = !falseColorActive }
-                        IconToggle(RawRecIcons.Zebra, "Zebras", zebrasActive) { zebrasActive = !zebrasActive }
-                        IconToggle(RawRecIcons.Histogram, "Histogram", histogramActive) { histogramActive = !histogramActive }
-                        IconToggle(RawRecIcons.Grid, "Grid", gridActive) { gridActive = !gridActive }
+                        IconToggle(RawRecIcons.Peaks, "Peaking", peakingActive, label = "Peak") { peakingActive = !peakingActive }
+                        IconToggle(RawRecIcons.FalseColor, "False color", falseColorActive, label = "False") { falseColorActive = !falseColorActive }
+                        IconToggle(RawRecIcons.Zebra, "Zebras", zebrasActive, label = "Zebra") { zebrasActive = !zebrasActive }
+                        IconToggle(RawRecIcons.Histogram, "Histogram", histogramActive, label = "Hist") { histogramActive = !histogramActive }
+                        IconToggle(RawRecIcons.Grid, "Grid", gridActive, label = "Grid") { gridActive = !gridActive }
                         IconToggle(
                             icon = RawRecIcons.Aspect,
                             contentDescription = "Framing",
@@ -731,55 +778,59 @@ fun CinemaViewfinderScreen(
                     }
                 }
 
-                // Right: Mini Histogram & Settings Button
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                // Right: Unified M3 Expressive Telemetry & Navigation Capsule
+                Surface(
+                    shape = CircleShape,
+                    color = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.92f),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
                 ) {
-                    val effectiveHistogram = if (histogramActive) (liveHistogram ?: histogram) else null
-                    if (effectiveHistogram != null) {
-                        Surface(
-                            shape = MaterialTheme.shapes.extraSmall,
-                            color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.85f),
-                            modifier = Modifier.size(width = 84.dp, height = 34.dp)
-                        ) {
-                            HistogramScopeView(
-                                histogram = effectiveHistogram,
-                                modifier = Modifier.padding(3.dp).fillMaxSize()
-                            )
-                        }
-                    }
-                    Surface(
-                        shape = MaterialTheme.shapes.extraSmall,
-                        color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.85f),
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
-                        modifier = Modifier
-                            .size(34.dp)
-                            .clickable { onOpenGallery() }
+                    Row(
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        Box(contentAlignment = Alignment.Center) {
+                        val effectiveHistogram = if (histogramActive) (liveHistogram ?: histogram) else null
+                        if (effectiveHistogram != null) {
+                            Surface(
+                                shape = RoundedCornerShape(16.dp),
+                                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                                modifier = Modifier.size(width = 84.dp, height = 36.dp)
+                            ) {
+                                HistogramScopeView(
+                                    histogram = effectiveHistogram,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp).fillMaxSize()
+                                )
+                            }
+                        }
+                        FilledTonalIconButton(
+                            onClick = onOpenGallery,
+                            shape = CircleShape,
+                            colors = IconButtonDefaults.filledTonalIconButtonColors(
+                                containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                                contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                            ),
+                            modifier = Modifier.size(36.dp)
+                        ) {
                             Icon(
                                 RawRecIcons.Movie,
                                 contentDescription = "Gallery",
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(18.dp)
+                                modifier = Modifier.size(17.dp)
                             )
                         }
-                    }
-                    Surface(
-                        shape = MaterialTheme.shapes.extraSmall,
-                        color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.85f),
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
-                        modifier = Modifier
-                            .size(34.dp)
-                            .clickable { onOpenSettings() }
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
+                        FilledTonalIconButton(
+                            onClick = onOpenSettings,
+                            shape = CircleShape,
+                            colors = IconButtonDefaults.filledTonalIconButtonColors(
+                                containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                                contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                            ),
+                            modifier = Modifier.size(36.dp)
+                        ) {
                             Icon(
                                 RawRecIcons.Settings,
                                 contentDescription = "Settings",
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(18.dp)
+                                modifier = Modifier.size(17.dp)
                             )
                         }
                     }
@@ -815,21 +866,26 @@ fun CinemaViewfinderScreen(
                 verticalArrangement = Arrangement.spacedBy(6.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                // Slide-up Dial Panel Drawer
+                // Slide-up Dial Panel Drawer (M3 Expressive extraLarge Sheet)
                 AnimatedVisibility(
                     visible = activePanel != ActivePanel.NONE,
                     enter = slideInVertically { it } + fadeIn(),
                     exit = slideOutVertically { it } + fadeOut()
                 ) {
                     Surface(
-                        shape = MaterialTheme.shapes.medium,
-                        color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.96f),
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
+                        shape = MaterialTheme.shapes.extraLarge,
+                        color = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.95f),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)),
                         modifier = Modifier
                             .fillMaxWidth()
+                            .heightIn(max = 240.dp)
                             .padding(bottom = 4.dp)
                     ) {
-                        Box(Modifier.padding(12.dp)) {
+                        Box(
+                            Modifier
+                                .verticalScroll(androidx.compose.foundation.rememberScrollState())
+                                .padding(14.dp)
+                        ) {
                             ActiveDialContent(
                                 activePanel = activePanel,
                                 controls = controls,
@@ -915,22 +971,20 @@ fun CinemaViewfinderScreen(
                     horizontalArrangement = Arrangement.Center,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Surface(
+                    FilledTonalIconButton(
+                        onClick = onOpenGallery,
                         shape = CircleShape,
-                        color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.85f),
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
-                        modifier = Modifier
-                            .size(44.dp)
-                            .clickable { onOpenGallery() }
+                        colors = IconButtonDefaults.filledTonalIconButtonColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.88f),
+                            contentColor = MaterialTheme.colorScheme.primary
+                        ),
+                        modifier = Modifier.size(48.dp)
                     ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(
-                                RawRecIcons.Movie,
-                                contentDescription = "Quick Gallery Review",
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
+                        Icon(
+                            RawRecIcons.Movie,
+                            contentDescription = "Quick Gallery Review",
+                            modifier = Modifier.size(20.dp).rotateIcon()
+                        )
                     }
 
                     Spacer(Modifier.width(28.dp))
@@ -940,7 +994,7 @@ fun CinemaViewfinderScreen(
                         onToggle = onRecordToggle
                     )
 
-                    Spacer(Modifier.width(72.dp))
+                    Spacer(Modifier.width(76.dp))
                 }
             }
         } else {
@@ -953,21 +1007,26 @@ fun CinemaViewfinderScreen(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                // Floating Dial Panel (slides in to the left of the dock)
+                // Floating Dial Panel (M3 Expressive extraLarge Sheet)
                 AnimatedVisibility(
                     visible = activePanel != ActivePanel.NONE,
                     enter = slideInHorizontally { it } + fadeIn(),
                     exit = slideOutHorizontally { it } + fadeOut()
                 ) {
                     Surface(
-                        shape = MaterialTheme.shapes.medium,
-                        color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.94f),
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
+                        shape = MaterialTheme.shapes.extraLarge,
+                        color = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.95f),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)),
                         modifier = Modifier
-                            .width(320.dp)
+                            .width(308.dp)
+                            .heightIn(max = 320.dp)
                             .padding(4.dp)
                     ) {
-                        Box(Modifier.padding(12.dp)) {
+                        Box(
+                            Modifier
+                                .verticalScroll(androidx.compose.foundation.rememberScrollState())
+                                .padding(14.dp)
+                        ) {
                             ActiveDialContent(
                                 activePanel = activePanel,
                                 controls = controls,
@@ -1029,7 +1088,7 @@ fun CinemaViewfinderScreen(
                 modifier = Modifier
                     .align(Alignment.BottomStart)
                     .fillMaxWidth()
-                    .padding(start = 16.dp, end = 240.dp, bottom = 12.dp)
+                    .padding(start = 16.dp, end = 254.dp, bottom = 12.dp)
             ) {
                 CinemaFocusRail(
                     currentDiopters = controls.focusDiopters,
@@ -1080,18 +1139,18 @@ fun CinemaViewfinderScreen(
                         Box(
                             Modifier
                                 .size(14.dp)
-                                .background(Color(0xFFFF2D55).copy(alpha = tallyAlpha), CircleShape)
+                                .background(MaterialTheme.colorScheme.error.copy(alpha = tallyAlpha), CircleShape)
                         )
                         Text(
                             "REC",
                             style = MaterialTheme.typography.titleMedium,
-                            color = Color(0xFFFF2D55),
+                            color = MaterialTheme.colorScheme.error,
                             fontWeight = FontWeight.Bold
                         )
                         Text(
                             formatTimecode(stats.elapsedMs, controls.targetFps),
                             style = DeckTimecodeStyle.copy(fontSize = 32.sp),
-                            color = Color.White
+                            color = MaterialTheme.colorScheme.onSurface
                         )
                     }
 
@@ -1103,9 +1162,9 @@ fun CinemaViewfinderScreen(
                         Text(
                             formatSize(stats.bytesWritten),
                             style = dev.rawrec.app.ui.theme.TelemetryStyle.copy(fontSize = 15.sp),
-                            color = Color(0xCCFFFFFF)
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
-                        Text("•", color = Color(0x55FFFFFF))
+                        Text("•", color = MaterialTheme.colorScheme.outline)
                         val drops = stats.dropped
                         Text(
                             if (drops == 0L) "0 DROP" else "$drops DROP",
@@ -1113,14 +1172,14 @@ fun CinemaViewfinderScreen(
                                 fontSize = 15.sp,
                                 fontWeight = if (drops > 0) FontWeight.Bold else FontWeight.Normal
                             ),
-                            color = if (drops == 0L) Color(0xFF00E5FF) else Color(0xFFFF2D55)
+                            color = if (drops == 0L) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
                         )
                         if (stats.thermalStage != "NONE") {
-                            Text("•", color = Color(0x55FFFFFF))
+                            Text("•", color = MaterialTheme.colorScheme.outline)
                             Text(
                                 "TH: ${stats.thermalStage}",
                                 style = dev.rawrec.app.ui.theme.TelemetryStyle.copy(fontSize = 15.sp),
-                                color = Color(0xFFFFB300)
+                                color = MaterialTheme.colorScheme.tertiary
                             )
                         }
                     }
@@ -1139,7 +1198,7 @@ fun CinemaViewfinderScreen(
                     Text(
                         "TAP ANYWHERE TO WAKE VIEWFINDER",
                         style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 1.5.sp),
-                        color = Color(0x88FFFFFF)
+                        color = MaterialTheme.colorScheme.outline
                     )
                 }
             }
@@ -1316,8 +1375,49 @@ private fun DialHeader(
                     fontWeight = FontWeight.Bold,
                     color = if (autoChecked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                Switch(checked = autoChecked, onCheckedChange = onAutoChange)
+                Switch(
+                    checked = autoChecked,
+                    onCheckedChange = onAutoChange,
+                    thumbContent = if (autoChecked) {
+                        {
+                            Icon(
+                                imageVector = RawRecIcons.Check,
+                                contentDescription = null,
+                                modifier = Modifier.size(SwitchDefaults.IconSize)
+                            )
+                        }
+                    } else null
+                )
             }
+        }
+    }
+}
+
+/**
+ * Returns a function that snaps a raw slider value to the nearest stop when
+ * within [snapFraction] of the range, and ticks the haptic motor on each new
+ * stop the thumb lands on.
+ */
+@Composable
+private fun rememberStopSnapper(
+    stops: List<Float>,
+    range: ClosedFloatingPointRange<Float>,
+    snapFraction: Float = 0.015f
+): (Float) -> Float {
+    val haptics = androidx.compose.ui.platform.LocalHapticFeedback.current
+    val lastStop = remember { mutableStateOf<Float?>(null) }
+    val window = (range.endInclusive - range.start) * snapFraction
+    return { v ->
+        val near = stops.minByOrNull { kotlin.math.abs(it - v) }
+        if (near != null && kotlin.math.abs(near - v) <= window) {
+            if (lastStop.value != near) {
+                lastStop.value = near
+                haptics.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove)
+            }
+            near
+        } else {
+            lastStop.value = null
+            v
         }
     }
 }
@@ -1336,9 +1436,12 @@ private fun IsoDialPanel(
         val analogHint = if (maxAnalogIso > 0) " (Analog ≤ $maxAnalogIso)" else ""
         DialHeader("ISO $iso$analogHint", "AUTO", autoExposure) { onIsoChanged(iso, it) }
         if (!autoExposure) {
+            val snapIso = rememberStopSnapper(
+                listOf(50f, 100f, 200f, 400f, 800f, 1600f, 3200f, 6400f), 50f..6400f
+            )
             Slider(
                 value = iso.toFloat(),
-                onValueChange = { onIsoChanged(it.toInt(), false) },
+                onValueChange = { onIsoChanged(snapIso(it).toInt(), false) },
                 valueRange = 50f..6400f
             )
             ChoiceChipRow(
@@ -1376,9 +1479,12 @@ private fun ShutterDialPanel(
                 onSelect = { onShutterChanged(exposureNs, shutterAngle, it == "Angle") }
             )
             if (useAngle) {
+                val snapAngle = rememberStopSnapper(
+                    listOf(45f, 90f, 144f, 172.8f, 180f, 270f, 360f), 10f..360f
+                )
                 Slider(
                     value = shutterAngle.toFloat(),
-                    onValueChange = { onShutterChanged(exposureNs, it.toDouble(), true) },
+                    onValueChange = { onShutterChanged(exposureNs, snapAngle(it).toDouble(), true) },
                     valueRange = 10f..360f
                 )
                 ChoiceChipRow(
@@ -1419,9 +1525,12 @@ private fun WbDialPanel(
             autoWb
         ) { onWbChanged(kelvin, tint, it) }
         if (!autoWb) {
+            val snapKelvin = rememberStopSnapper(
+                listOf(3200f, 4000f, 5000f, 5600f, 6500f, 7500f), 2000f..10000f
+            )
             Slider(
                 value = kelvin.toFloat(),
-                onValueChange = { onWbChanged(it.toInt(), tint, false) },
+                onValueChange = { onWbChanged(snapKelvin(it).toInt(), tint, false) },
                 valueRange = 2000f..10000f
             )
             ChoiceChipRow(

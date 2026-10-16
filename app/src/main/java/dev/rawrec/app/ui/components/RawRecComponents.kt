@@ -4,10 +4,12 @@ package dev.rawrec.app.ui.components
 
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.draw.clip
@@ -21,6 +23,8 @@ import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -29,10 +33,16 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -156,11 +166,13 @@ fun SectionCard(
     icon: ImageVector? = null,
     content: @Composable () -> Unit
 ) {
-    Surface(
-        // Spec card mapping: medium (12dp), not large.
-        shape = MaterialTheme.shapes.medium,
-        color = MaterialTheme.colorScheme.surfaceContainer,
-        contentColor = MaterialTheme.colorScheme.onSurface,
+    OutlinedCard(
+        shape = MaterialTheme.shapes.large,
+        colors = CardDefaults.outlinedCardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainer,
+            contentColor = MaterialTheme.colorScheme.onSurface
+        ),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
         modifier = Modifier
             .fillMaxWidth()
             .animateContentSize(spring())
@@ -172,18 +184,35 @@ fun SectionCard(
             if (title != null) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     if (icon != null) {
-                        Icon(
-                            imageVector = icon,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(20.dp)
-                        )
+                        Surface(
+                            shape = MaterialTheme.shapes.small,
+                            color = MaterialTheme.colorScheme.primaryContainer,
+                            contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = icon,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                        }
                     }
-                    Text(title, style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        title,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
                 }
+                HorizontalDivider(
+                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
+                    modifier = Modifier.padding(vertical = 2.dp)
+                )
             }
             content()
         }
@@ -201,9 +230,20 @@ fun SettingRow(
     onClick: (() -> Unit)? = null,
     trailing: (@Composable () -> Unit)? = null
 ) {
+    val haptics = LocalHapticFeedback.current
+    val effectiveOnClick: (() -> Unit)? = when {
+        onClick != null -> onClick
+        checked != null && onCheckedChange != null -> {
+            {
+                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                onCheckedChange(!checked)
+            }
+        }
+        else -> null
+    }
     Surface(
-        onClick = onClick ?: {},
-        enabled = enabled && onClick != null,
+        onClick = effectiveOnClick ?: {},
+        enabled = enabled && effectiveOnClick != null,
         shape = MaterialTheme.shapes.small,
         color = androidx.compose.ui.graphics.Color.Transparent,
         contentColor = MaterialTheme.colorScheme.onSurface,
@@ -212,7 +252,7 @@ fun SettingRow(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(vertical = 8.dp),
+                .padding(vertical = 8.dp, horizontal = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(16.dp)
         ) {
@@ -228,14 +268,14 @@ fun SettingRow(
             Column(Modifier.weight(1f)) {
                 Text(
                     label,
-                    style = MaterialTheme.typography.bodyMedium,
+                    style = MaterialTheme.typography.bodyLarge,
                     color = if (enabled) MaterialTheme.colorScheme.onSurface
                     else MaterialTheme.colorScheme.outline
                 )
                 if (supporting != null) {
                     Text(
                         supporting,
-                        style = MaterialTheme.typography.labelSmall,
+                        style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
@@ -243,8 +283,22 @@ fun SettingRow(
             if (checked != null) {
                 Switch(
                     checked = checked,
-                    onCheckedChange = onCheckedChange,
-                    enabled = enabled
+                    onCheckedChange = if (onCheckedChange != null) {
+                        {
+                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            onCheckedChange(it)
+                        }
+                    } else null,
+                    enabled = enabled,
+                    thumbContent = if (checked) {
+                        {
+                            Icon(
+                                imageVector = RawRecIcons.Check,
+                                contentDescription = null,
+                                modifier = Modifier.size(SwitchDefaults.IconSize)
+                            )
+                        }
+                    } else null
                 )
             } else if (trailing != null) {
                 trailing()
@@ -266,9 +320,12 @@ fun StatChip(
         label = "stat_color"
     )
     Surface(
-        shape = MaterialTheme.shapes.small,
+        shape = MaterialTheme.shapes.medium,
         color = container,
-        // Tonal pairing: onX text on X container (was error-on-container).
+        border = BorderStroke(
+            width = 1.dp,
+            color = if (alert) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.outlineVariant
+        ),
         contentColor = if (alert) MaterialTheme.colorScheme.onErrorContainer
         else MaterialTheme.colorScheme.onSurfaceVariant
     ) {
@@ -278,7 +335,7 @@ fun StatChip(
         ) {
             Text(
                 value,
-                style = dev.rawrec.app.ui.theme.TelemetryStyle,
+                style = dev.rawrec.app.ui.theme.TelemetryEmphasizedStyle,
                 color = if (alert) MaterialTheme.colorScheme.onErrorContainer
                 else MaterialTheme.colorScheme.onSurface
             )
@@ -299,39 +356,63 @@ fun IconToggle(
     val haptics = LocalHapticFeedback.current
     val pop = remember { Animatable(1f) }
     LaunchedEffect(active) {
-        pop.snapTo(0.8f)
+        pop.snapTo(0.86f)
         pop.animateTo(1f, Bouncy)
     }
-    // Tonal elevation (primaryContainer fill) — no shadow; MD3 uses surface
-    // color, not elevation shadows, for resting components.
+    val cornerRadius by animateDpAsState(
+        targetValue = if (active) 22.dp else 12.dp,
+        animationSpec = spring(Spring.DampingRatioMediumBouncy, Spring.StiffnessMedium),
+        label = "toggle_corner"
+    )
+    val container by animateColorAsState(
+        targetValue = if (active) MaterialTheme.colorScheme.primaryContainer
+        else MaterialTheme.colorScheme.surfaceContainerHigh,
+        animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
+        label = "toggle_container"
+    )
+    val border by animateColorAsState(
+        targetValue = if (active) MaterialTheme.colorScheme.primary
+        else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f),
+        animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
+        label = "toggle_border"
+    )
     Surface(
         onClick = {
             haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
             onClick()
         },
-        shape = MaterialTheme.shapes.small,
-        color = if (active) MaterialTheme.colorScheme.primaryContainer
-        else MaterialTheme.colorScheme.surfaceContainer,
+        shape = RoundedCornerShape(cornerRadius),
+        color = container,
+        border = BorderStroke(if (active) 1.5.dp else 1.dp, border),
         contentColor = if (active) MaterialTheme.colorScheme.onPrimaryContainer
         else MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = modifier.size(48.dp).scale(pop.value)
+        modifier = modifier
+            .defaultMinSize(minWidth = 46.dp, minHeight = 44.dp)
+            .scale(pop.value)
     ) {
-        Box(contentAlignment = Alignment.Center) {
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+        ) {
             if (label != null) {
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center
+                    verticalArrangement = Arrangement.spacedBy(2.dp)
                 ) {
                     Icon(
                         imageVector = icon,
                         contentDescription = contentDescription,
+                        tint = if (active) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(16.dp).rotateIcon()
                     )
                     Text(
                         text = label,
                         style = MaterialTheme.typography.labelSmall,
                         fontSize = 9.sp,
-                        fontWeight = FontWeight.Bold,
+                        fontWeight = if (active) FontWeight.Bold else FontWeight.Medium,
+                        color = if (active) MaterialTheme.colorScheme.onPrimaryContainer
+                        else MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
                         modifier = Modifier.rotateIcon()
                     )
@@ -340,7 +421,7 @@ fun IconToggle(
                 Icon(
                     imageVector = icon,
                     contentDescription = contentDescription,
-                    modifier = Modifier.size(24.dp).rotateIcon()
+                    modifier = Modifier.size(20.dp).rotateIcon()
                 )
             }
         }
@@ -364,41 +445,117 @@ fun ChoiceChipRow(
             val pop = remember { Animatable(1f) }
             LaunchedEffect(isSelected) {
                 if (isSelected) {
-                    pop.snapTo(0.9f)
+                    pop.snapTo(0.92f)
                     pop.animateTo(1f, Bouncy)
                 }
             }
-            val container by animateColorAsState(
-                targetValue = if (isSelected) MaterialTheme.colorScheme.secondaryContainer
-                else MaterialTheme.colorScheme.surfaceContainerHighest,
-                animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
-                label = "chip_color"
-            )
-            Surface(
+            FilterChip(
+                selected = isSelected,
                 onClick = {
                     haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                     onSelect(opt)
                 },
-                shape = MaterialTheme.shapes.small,
-                color = container,
-                contentColor = if (isSelected) MaterialTheme.colorScheme.onSecondaryContainer
-                else MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.scale(pop.value)
-            ) {
-                Box(
-                    modifier = Modifier
-                        .defaultMinSize(minWidth = 44.dp, minHeight = 44.dp)
-                        .padding(horizontal = 12.dp, vertical = 4.dp),
-                    contentAlignment = Alignment.Center
-                ) {
+                label = {
                     Text(
                         opt,
                         style = if (isSelected) dev.rawrec.app.ui.theme.TelemetryEmphasizedStyle
                         else dev.rawrec.app.ui.theme.TelemetryStyle,
                         modifier = Modifier.rotateIcon()
                     )
+                },
+                leadingIcon = if (isSelected) {
+                    {
+                        Icon(
+                            imageVector = RawRecIcons.Check,
+                            contentDescription = null,
+                            modifier = Modifier.size(FilterChipDefaults.IconSize).rotateIcon()
+                        )
+                    }
+                } else null,
+                shape = MaterialTheme.shapes.small,
+                colors = FilterChipDefaults.filterChipColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                    labelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                    selectedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
+                    selectedLabelColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                    selectedLeadingIconColor = MaterialTheme.colorScheme.primary
+                ),
+                border = FilterChipDefaults.filterChipBorder(
+                    enabled = true,
+                    selected = isSelected,
+                    borderColor = MaterialTheme.colorScheme.outlineVariant,
+                    selectedBorderColor = MaterialTheme.colorScheme.primary,
+                    selectedBorderWidth = 1.dp
+                ),
+                modifier = Modifier.scale(pop.value)
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun ChoiceChipGrid(
+    options: List<String>,
+    selected: (String) -> Boolean,
+    onSelect: (String) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val haptics = LocalHapticFeedback.current
+    FlowRow(
+        modifier = modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        options.forEach { opt ->
+            val isSelected = selected(opt)
+            val pop = remember { Animatable(1f) }
+            LaunchedEffect(isSelected) {
+                if (isSelected) {
+                    pop.snapTo(0.92f)
+                    pop.animateTo(1f, Bouncy)
                 }
             }
+            FilterChip(
+                selected = isSelected,
+                onClick = {
+                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    onSelect(opt)
+                },
+                label = {
+                    Text(
+                        opt,
+                        style = if (isSelected) dev.rawrec.app.ui.theme.TelemetryEmphasizedStyle
+                        else dev.rawrec.app.ui.theme.TelemetryStyle,
+                        modifier = Modifier.rotateIcon()
+                    )
+                },
+                leadingIcon = if (isSelected) {
+                    {
+                        Icon(
+                            imageVector = RawRecIcons.Check,
+                            contentDescription = null,
+                            modifier = Modifier.size(FilterChipDefaults.IconSize).rotateIcon()
+                        )
+                    }
+                } else null,
+                shape = MaterialTheme.shapes.small,
+                colors = FilterChipDefaults.filterChipColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                    labelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                    selectedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
+                    selectedLabelColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                    selectedLeadingIconColor = MaterialTheme.colorScheme.primary
+                ),
+                border = FilterChipDefaults.filterChipBorder(
+                    enabled = true,
+                    selected = isSelected,
+                    borderColor = MaterialTheme.colorScheme.outlineVariant,
+                    selectedBorderColor = MaterialTheme.colorScheme.primary,
+                    selectedBorderWidth = 1.dp
+                ),
+                modifier = Modifier.scale(pop.value)
+            )
         }
     }
 }
@@ -567,19 +724,19 @@ fun RecordButtonExpressive(
         shadowElevation = if (recording) 10.dp else 4.dp,
         border = androidx.compose.foundation.BorderStroke(
             width = 2.dp,
-            color = MaterialTheme.colorScheme.outlineVariant
+            color = if (recording) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.outline
         ),
         modifier = modifier
-            .size(56.dp)
+            .size(48.dp)
             .scale(scale)
     ) {
         Box(contentAlignment = Alignment.Center) {
             val shapeFraction = 1f - morph
             Box(
                 Modifier
-                    .size(24.dp)
+                    .size(22.dp)
                     .clip(
-                        RoundedCornerShape(percent = (50 * shapeFraction + 20 * morph).toInt())
+                        RoundedCornerShape(percent = (50 * shapeFraction + 22 * morph).toInt())
                     )
                     .background(MaterialTheme.colorScheme.error)
             )

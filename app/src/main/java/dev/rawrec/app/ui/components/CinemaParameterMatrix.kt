@@ -1,31 +1,44 @@
 package dev.rawrec.app.ui.components
 
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import dev.rawrec.app.ui.theme.DeckLabelStyle
 import dev.rawrec.app.ui.theme.DeckValueStyle
 
 /**
- * Cinema studio parameter matrix cell.
+ * Material 3 Expressive cinema parameter tile.
  *
- * High-density studio parameter tile with an uppercase micro-label above a bold
- * monospaced value readout and an active Electric Cyan indicator glow.
+ * Features:
+ * - Spring-physics shape morphing (14dp card at rest -> 22dp stadium pill when active).
+ * - Category vector icon + uppercase micro-label + optional Auto/Manual badge.
+ * - Tonal container elevation (surfaceContainerHigh -> secondaryContainer on manual -> primaryContainer when active).
  */
 @Composable
 fun CinemaParameterTile(
@@ -33,65 +46,140 @@ fun CinemaParameterTile(
     value: String,
     active: Boolean,
     modifier: Modifier = Modifier,
+    icon: ImageVector? = null,
     highlight: Boolean = false,
+    modeBadge: String? = null,
     onClick: () -> Unit
 ) {
+    val haptics = LocalHapticFeedback.current
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (pressed) 0.94f else 1f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessMedium
+        ),
+        label = "tileScale"
+    )
+
+    val cornerRadius by animateDpAsState(
+        targetValue = if (active) 22.dp else 14.dp,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessMedium
+        ),
+        label = "tileCorner"
+    )
+
     val borderColor by animateColorAsState(
         targetValue = when {
             active -> MaterialTheme.colorScheme.primary
-            highlight -> MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
-            else -> MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)
+            highlight -> MaterialTheme.colorScheme.primary.copy(alpha = 0.65f)
+            else -> MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f)
         },
-        animationSpec = tween(150),
+        animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
         label = "tileBorder"
     )
 
     val containerColor by animateColorAsState(
         targetValue = when {
-            active -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f)
-            else -> MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.85f)
+            active -> MaterialTheme.colorScheme.primaryContainer
+            highlight -> MaterialTheme.colorScheme.secondaryContainer
+            else -> MaterialTheme.colorScheme.surfaceContainerHigh
         },
-        animationSpec = tween(150),
+        animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
         label = "tileBg"
     )
 
+    val contentColor = when {
+        active -> MaterialTheme.colorScheme.onPrimaryContainer
+        highlight -> MaterialTheme.colorScheme.onSecondaryContainer
+        else -> MaterialTheme.colorScheme.onSurface
+    }
+
     Surface(
-        shape = MaterialTheme.shapes.small,
+        onClick = {
+            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+            onClick()
+        },
+        interactionSource = interaction,
+        shape = RoundedCornerShape(cornerRadius),
         color = containerColor,
-        border = BorderStroke(1.dp, borderColor),
-        modifier = modifier
-            .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = ripple(color = MaterialTheme.colorScheme.primary),
-                onClick = onClick
-            )
+        contentColor = contentColor,
+        border = BorderStroke(if (active) 1.5.dp else 1.dp, borderColor),
+        modifier = modifier.scale(scale)
     ) {
         Column(
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-            verticalArrangement = Arrangement.Center,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 10.dp, vertical = 7.dp),
+            verticalArrangement = Arrangement.spacedBy(3.dp),
             horizontalAlignment = Alignment.Start
         ) {
-            Text(
-                text = label.uppercase(),
-                style = DeckLabelStyle,
-                color = if (active || highlight) MaterialTheme.colorScheme.primary
-                else MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Spacer(Modifier.height(2.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(3.dp)
+                ) {
+                    if (icon != null) {
+                        Icon(
+                            imageVector = icon,
+                            contentDescription = null,
+                            tint = when {
+                                active -> MaterialTheme.colorScheme.primary
+                                highlight -> MaterialTheme.colorScheme.primary
+                                else -> MaterialTheme.colorScheme.onSurfaceVariant
+                            },
+                            modifier = Modifier.size(11.dp).rotateIcon()
+                        )
+                    }
+                    Text(
+                        text = label.uppercase(),
+                        style = DeckLabelStyle.copy(letterSpacing = 0.6.sp),
+                        color = when {
+                            active -> MaterialTheme.colorScheme.primary
+                            highlight -> MaterialTheme.colorScheme.primary
+                            else -> MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                        maxLines = 1
+                    )
+                }
+                if (modeBadge != null) {
+                    Surface(
+                        shape = CircleShape,
+                        color = if (highlight) MaterialTheme.colorScheme.primaryContainer
+                        else MaterialTheme.colorScheme.surfaceContainerHighest
+                    ) {
+                        Text(
+                            text = modeBadge,
+                            style = DeckLabelStyle.copy(fontSize = 8.sp, letterSpacing = 0.4.sp),
+                            fontWeight = FontWeight.Bold,
+                            color = if (highlight) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
+                        )
+                    }
+                }
+            }
             Text(
                 text = value,
                 style = DeckValueStyle,
-                color = if (active) MaterialTheme.colorScheme.primary
-                else MaterialTheme.colorScheme.onSurface,
-                maxLines = 1
+                color = contentColor,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
         }
     }
 }
 
 /**
- * Compact right-side dock housing a grid of direct-access parameter tiles
- * (FPS, Shutter, ISO, WB, Look, Res) and the master Record Trigger.
+ * Compact right-side Material 3 Expressive dock housing a 2x3 matrix of parameter
+ * tiles (FPS, Shutter, ISO, WB, Look, Res) and a sculpted master Record Trigger well.
  */
 @Composable
 fun CinemaParameterDock(
@@ -110,24 +198,25 @@ fun CinemaParameterDock(
     modifier: Modifier = Modifier
 ) {
     Surface(
-        color = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.90f),
-        shape = MaterialTheme.shapes.medium,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
-        modifier = modifier.width(220.dp)
+        color = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.92f),
+        shape = MaterialTheme.shapes.extraLarge,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        modifier = modifier.width(234.dp)
     ) {
         Column(
-            modifier = Modifier.padding(8.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(7.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             // Row 1: FPS & Shutter
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                horizontalArrangement = Arrangement.spacedBy(7.dp)
             ) {
                 CinemaParameterTile(
                     label = "FPS",
                     value = fpsValue,
+                    icon = RawRecIcons.Speed,
                     active = activeTile == "FPS",
                     modifier = Modifier.weight(1f)
                 ) { onTileClick("FPS") }
@@ -135,8 +224,10 @@ fun CinemaParameterDock(
                 CinemaParameterTile(
                     label = "Shutter",
                     value = shutterValue,
+                    icon = RawRecIcons.Shutter,
                     active = activeTile == "SHUTTER",
                     highlight = !autoExposure,
+                    modeBadge = if (autoExposure) "A" else "M",
                     modifier = Modifier.weight(1f)
                 ) { onTileClick("SHUTTER") }
             }
@@ -144,21 +235,25 @@ fun CinemaParameterDock(
             // Row 2: ISO & WB
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                horizontalArrangement = Arrangement.spacedBy(7.dp)
             ) {
                 CinemaParameterTile(
                     label = "ISO",
                     value = isoValue,
+                    icon = RawRecIcons.Iso,
                     active = activeTile == "ISO",
                     highlight = !autoExposure,
+                    modeBadge = if (autoExposure) "A" else "M",
                     modifier = Modifier.weight(1f)
                 ) { onTileClick("ISO") }
 
                 CinemaParameterTile(
                     label = "WB",
                     value = wbValue,
+                    icon = RawRecIcons.WhiteBalance,
                     active = activeTile == "WB",
                     highlight = !autoWb,
+                    modeBadge = if (autoWb) "A" else "M",
                     modifier = Modifier.weight(1f)
                 ) { onTileClick("WB") }
             }
@@ -166,11 +261,12 @@ fun CinemaParameterDock(
             // Row 3: Look / Tone & Resolution
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                horizontalArrangement = Arrangement.spacedBy(7.dp)
             ) {
                 CinemaParameterTile(
                     label = "Look",
                     value = lookValue,
+                    icon = RawRecIcons.Tune,
                     active = activeTile == "LOOK",
                     modifier = Modifier.weight(1f)
                 ) { onTileClick("LOOK") }
@@ -178,22 +274,53 @@ fun CinemaParameterDock(
                 CinemaParameterTile(
                     label = "Res",
                     value = resValue,
+                    icon = RawRecIcons.Layers,
                     active = activeTile == "RES",
                     modifier = Modifier.weight(1f)
                 ) { onTileClick("RES") }
             }
 
-            Spacer(Modifier.height(4.dp))
+            HorizontalDivider(
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
+                modifier = Modifier.padding(vertical = 2.dp)
+            )
 
-            // Master Cinema Record Button (Anchored under right thumb)
-            Box(
-                modifier = Modifier.fillMaxWidth(),
-                contentAlignment = Alignment.Center
+            // Master Cinema Record Trigger Well (M3 Expressive Tonal Dock)
+            Surface(
+                shape = CircleShape,
+                color = if (recording) MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.45f)
+                else MaterialTheme.colorScheme.surfaceContainerHigh,
+                border = BorderStroke(
+                    1.dp,
+                    if (recording) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.outlineVariant
+                ),
+                modifier = Modifier.fillMaxWidth()
             ) {
-                RecordButtonExpressive(
-                    recording = recording,
-                    onToggle = onRecordToggle
-                )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 14.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column {
+                        Text(
+                            text = if (recording) "RECORDING" else "READY",
+                            style = DeckLabelStyle,
+                            color = if (recording) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = if (recording) "Tap to stop" else "RAW Capture",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    RecordButtonExpressive(
+                        recording = recording,
+                        onToggle = onRecordToggle
+                    )
+                }
             }
         }
     }
@@ -218,24 +345,25 @@ fun CinemaParameterGrid(
     modifier: Modifier = Modifier
 ) {
     Surface(
-        color = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.90f),
-        shape = MaterialTheme.shapes.medium,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
+        color = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.92f),
+        shape = MaterialTheme.shapes.extraLarge,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
         modifier = modifier.fillMaxWidth()
     ) {
         Column(
-            modifier = Modifier.padding(8.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
+            modifier = Modifier.padding(10.dp),
+            verticalArrangement = Arrangement.spacedBy(7.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             // Row 1: FPS, Shutter, ISO
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                horizontalArrangement = Arrangement.spacedBy(7.dp)
             ) {
                 CinemaParameterTile(
                     label = "FPS",
                     value = fpsValue,
+                    icon = RawRecIcons.Speed,
                     active = activeTile == "FPS",
                     modifier = Modifier.weight(1f)
                 ) { onTileClick("FPS") }
@@ -243,16 +371,20 @@ fun CinemaParameterGrid(
                 CinemaParameterTile(
                     label = "Shutter",
                     value = shutterValue,
+                    icon = RawRecIcons.Shutter,
                     active = activeTile == "SHUTTER",
                     highlight = !autoExposure,
+                    modeBadge = if (autoExposure) "A" else "M",
                     modifier = Modifier.weight(1f)
                 ) { onTileClick("SHUTTER") }
 
                 CinemaParameterTile(
                     label = "ISO",
                     value = isoValue,
+                    icon = RawRecIcons.Iso,
                     active = activeTile == "ISO",
                     highlight = !autoExposure,
+                    modeBadge = if (autoExposure) "A" else "M",
                     modifier = Modifier.weight(1f)
                 ) { onTileClick("ISO") }
             }
@@ -260,19 +392,22 @@ fun CinemaParameterGrid(
             // Row 2: WB, Look, Res
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                horizontalArrangement = Arrangement.spacedBy(7.dp)
             ) {
                 CinemaParameterTile(
                     label = "WB",
                     value = wbValue,
+                    icon = RawRecIcons.WhiteBalance,
                     active = activeTile == "WB",
                     highlight = !autoWb,
+                    modeBadge = if (autoWb) "A" else "M",
                     modifier = Modifier.weight(1f)
                 ) { onTileClick("WB") }
 
                 CinemaParameterTile(
                     label = "Look",
                     value = lookValue,
+                    icon = RawRecIcons.Tune,
                     active = activeTile == "LOOK",
                     modifier = Modifier.weight(1f)
                 ) { onTileClick("LOOK") }
@@ -280,6 +415,7 @@ fun CinemaParameterGrid(
                 CinemaParameterTile(
                     label = "Res",
                     value = resValue,
+                    icon = RawRecIcons.Layers,
                     active = activeTile == "RES",
                     modifier = Modifier.weight(1f)
                 ) { onTileClick("RES") }

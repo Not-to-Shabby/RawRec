@@ -1,4 +1,7 @@
-@file:OptIn(androidx.compose.material3.ExperimentalMaterial3ExpressiveApi::class)
+@file:OptIn(
+    androidx.compose.material3.ExperimentalMaterial3ExpressiveApi::class,
+    androidx.compose.material3.ExperimentalMaterial3Api::class
+)
 
 package dev.rawrec.app
 
@@ -29,7 +32,9 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -38,14 +43,26 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.ListItem
+import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedCard
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.SecondaryScrollableTabRow
 import androidx.compose.material3.Slider
+import androidx.compose.material3.Tab
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -646,21 +663,59 @@ fun RawRecApp() {
                     color = MaterialTheme.colorScheme.background
                 ) {
                     Column(Modifier.fillMaxSize()) {
-                        Surface(color = MaterialTheme.colorScheme.surfaceContainer) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 16.dp, vertical = 12.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    "Settings",
-                                    style = MaterialTheme.typography.titleLarge,
-                                    modifier = Modifier.weight(1f)
-                                )
-                                Button(onClick = { settingsOpen = false }) { Text("Close") }
-                            }
-                        }
+                        TopAppBar(
+                            title = {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                ) {
+                                    Surface(
+                                        shape = MaterialTheme.shapes.small,
+                                        color = MaterialTheme.colorScheme.primaryContainer,
+                                        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                                        modifier = Modifier.size(34.dp)
+                                    ) {
+                                        Box(contentAlignment = Alignment.Center) {
+                                            Icon(
+                                                imageVector = RawRecIcons.Settings,
+                                                contentDescription = null,
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                        }
+                                    }
+                                    Column {
+                                        Text(
+                                            "Settings",
+                                            style = MaterialTheme.typography.titleLarge,
+                                            fontWeight = FontWeight.SemiBold
+                                        )
+                                        Text(
+                                            "RAW Sensor Pipeline & Studio Deck Configuration",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
+                            },
+                            actions = {
+                                FilledTonalButton(
+                                    onClick = { settingsOpen = false },
+                                    modifier = Modifier.padding(end = 8.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = RawRecIcons.Close,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(Modifier.width(6.dp))
+                                    Text("Close")
+                                }
+                            },
+                            colors = TopAppBarDefaults.topAppBarColors(
+                                containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                                titleContentColor = MaterialTheme.colorScheme.onSurface
+                            )
+                        )
                         SettingsScreen(
                             controller, stats,
                             autoExposure = cameraControls.autoExposure,
@@ -937,7 +992,6 @@ private fun SettingsScreen(
     var cams by remember { mutableStateOf<List<CamInfo>>(emptyList()) }
     var camMenuOpen by remember { mutableStateOf(false) }
     var sizeMenuOpen by remember { mutableStateOf(false) }
-    var wantStart by remember { mutableStateOf(false) }
     var inspectFile by remember { mutableStateOf<File?>(null) }
     val camSel = recCamSel
     val sizeSel = recSizeSel
@@ -952,37 +1006,52 @@ private fun SettingsScreen(
         }
     }
 
-    val permission = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestMultiplePermissions()
-    ) { granted ->
-        if (granted[Manifest.permission.CAMERA] == true && wantStart) {
-            wantStart = false
-	            camSel?.let { c -> sizeSel?.let { s ->
-	                Thread {
-	                    controller.start(
-	                        c.id, s,
-	                        physicalCameraId = c.physicalId,
-	                        autoExposure = autoExposure,
-	                        useZstd = recUseZstd,
-	                        packMipi10 = recPackMipi,
-	                        mic = recMicOn,
-	                        proxy = recProxyOn,
-	                        uiRotation = uiRotation
-	                    )
-	                }.start()
-	            } }
-	        }
-	    }
+    var tab by remember { mutableStateOf(0) }
+    val tabs = listOf(
+        "Capture" to RawRecIcons.Camera,
+        "Viewfinder" to RawRecIcons.Scopes,
+        "Storage" to RawRecIcons.Folder,
+        "Diagnostics" to RawRecIcons.Probe
+    )
+    Column(Modifier.fillMaxSize()) {
+        SecondaryScrollableTabRow(
+            selectedTabIndex = tab,
+            edgePadding = 16.dp,
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLow
+        ) {
+            tabs.forEachIndexed { idx, (title, icon) ->
+                Tab(
+                    selected = tab == idx,
+                    onClick = { tab = idx },
+                    text = {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                imageVector = icon,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp),
+                                tint = if (tab == idx) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Text(
+                                title,
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = if (tab == idx) FontWeight.SemiBold else FontWeight.Medium,
+                                color = if (tab == idx) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                )
+            }
+        }
+        LazyColumn(
+            Modifier.fillMaxSize(),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
 
-	    LazyColumn(
-	        Modifier.fillMaxSize().padding(16.dp),
-	        verticalArrangement = Arrangement.spacedBy(12.dp)
-	    ) {
-	        item {
-	            Text("Settings", style = MaterialTheme.typography.headlineSmall)
-	        }
-
-	        item {
+	        if (tab == 0) item {
 	            StaggeredAppear(index = 1) {
 	                SectionCard(title = "Source", icon = RawRecIcons.Camera) {
 	                    Text(
@@ -991,7 +1060,7 @@ private fun SettingsScreen(
 	                        color = MaterialTheme.colorScheme.onSurface
 	                    )
 	                    if (cams.isNotEmpty()) {
-	                        dev.rawrec.app.ui.components.ChoiceChipRow(
+	                        dev.rawrec.app.ui.components.ChoiceChipGrid(
 	                            options = cams.map { it.displayName },
 	                            selected = { opt ->
 	                                cams.firstOrNull { it.displayName == opt }?.let {
@@ -1022,7 +1091,7 @@ private fun SettingsScreen(
 	                    )
 	                    val sizes = camSel?.rawSizes.orEmpty()
 	                    if (sizes.isNotEmpty()) {
-	                        dev.rawrec.app.ui.components.ChoiceChipRow(
+	                        dev.rawrec.app.ui.components.ChoiceChipGrid(
 	                            options = sizes.map { CameraCatalog.formatShortResolution(it) },
 	                            selected = { opt ->
 	                                sizeSel?.let { CameraCatalog.formatShortResolution(it) } == opt
@@ -1044,7 +1113,7 @@ private fun SettingsScreen(
 	            }
 	        }
 
-        item {
+        if (tab == 0) item {
             StaggeredAppear(index = 2) {
                 SectionCard(title = "Pipeline", icon = RawRecIcons.Layers) {
                     // These drive BOTH start paths (Settings button + cinema
@@ -1089,7 +1158,7 @@ private fun SettingsScreen(
             }
         }
 
-        item {
+        if (tab == 2) item {
             StaggeredAppear(index = 3) {
                 SectionCard(title = "Storage & Destination", icon = RawRecIcons.Folder) {
                     var customPath by remember { mutableStateOf(prefs.customStoragePath) }
@@ -1119,41 +1188,76 @@ private fun SettingsScreen(
                         volumes.forEach { vol ->
                             val isSelected = (customPath == null && vol.isPrimary) || (customPath == vol.path.absolutePath)
                             val volFreeGB = vol.freeBytes.toDouble() / (1 shl 30)
-                            Surface(
-                                shape = MaterialTheme.shapes.small,
-                                color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHighest,
-                                border = if (isSelected) BorderStroke(1.dp, MaterialTheme.colorScheme.primary) else BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable(!stats.active) {
+                            val volTotalGB = (vol.totalBytes.toDouble() / (1 shl 30)).coerceAtLeast(0.1)
+                            val usedFraction = ((volTotalGB - volFreeGB) / volTotalGB).toFloat().coerceIn(0f, 1f)
+                            OutlinedCard(
+                                onClick = {
+                                    if (!stats.active) {
                                         val newPath = if (vol.isPrimary) null else vol.path.absolutePath
                                         prefs.customStoragePath = newPath
                                         customPath = newPath
                                     }
+                                },
+                                enabled = !stats.active,
+                                shape = MaterialTheme.shapes.medium,
+                                colors = CardDefaults.outlinedCardColors(
+                                    containerColor = if (isSelected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerHighest
+                                ),
+                                border = BorderStroke(
+                                    width = if (isSelected) 1.5.dp else 1.dp,
+                                    color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant
+                                ),
+                                modifier = Modifier.fillMaxWidth()
                             ) {
-                                Row(
-                                    modifier = Modifier.padding(10.dp),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
+                                Column(
+                                    modifier = Modifier.padding(12.dp),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(
-                                            if (vol.isRemovable) "💾 ${vol.description} (External USB-C)" else "📱 ${vol.description} (Internal)",
-                                            style = MaterialTheme.typography.bodyMedium,
-                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                                            color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
-                                        )
-                                        Text(
-                                            vol.path.absolutePath,
-                                            style = dev.rawrec.app.ui.theme.TelemetryStyle,
-                                            color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f) else MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                            modifier = Modifier.weight(1f)
+                                        ) {
+                                            RadioButton(
+                                                selected = isSelected,
+                                                onClick = null
+                                            )
+                                            Column {
+                                                Text(
+                                                    if (vol.isRemovable) "${vol.description} (External USB-C)" else "${vol.description} (Internal)",
+                                                    style = MaterialTheme.typography.titleSmall,
+                                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                                    color = if (isSelected) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurface
+                                                )
+                                                Text(
+                                                    vol.path.absolutePath,
+                                                    style = dev.rawrec.app.ui.theme.TelemetryStyle,
+                                                    color = if (isSelected) MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.8f) else MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                            }
+                                        }
+                                        Surface(
+                                            shape = MaterialTheme.shapes.extraSmall,
+                                            color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainer
+                                        ) {
+                                            Text(
+                                                "%.1f GB free".format(volFreeGB),
+                                                style = dev.rawrec.app.ui.theme.TelemetryEmphasizedStyle,
+                                                color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
+                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                            )
+                                        }
                                     }
-                                    Text(
-                                        "%.1f GB free".format(volFreeGB),
-                                        style = dev.rawrec.app.ui.theme.TelemetryStyle,
-                                        fontWeight = FontWeight.Bold,
-                                        color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                                    LinearProgressIndicator(
+                                        progress = { usedFraction },
+                                        modifier = Modifier.fillMaxWidth().height(6.dp),
+                                        color = if (usedFraction > 0.9f) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+                                        trackColor = MaterialTheme.colorScheme.surfaceContainer
                                     )
                                 }
                             }
@@ -1171,7 +1275,7 @@ private fun SettingsScreen(
             }
         }
 
-        item {
+        if (tab == 1) item {
             StaggeredAppear(index = 4) {
 	                dev.rawrec.app.ui.components.SectionCard(
 	                    title = "Viewfinder & Orientation",
@@ -1182,7 +1286,7 @@ private fun SettingsScreen(
 	                        style = MaterialTheme.typography.labelMedium,
 	                        color = MaterialTheme.colorScheme.onSurface
 	                    )
-	                    dev.rawrec.app.ui.components.ChoiceChipRow(
+	                    dev.rawrec.app.ui.components.ChoiceChipGrid(
 	                        options = dev.rawrec.app.util.AppPreferences.ViewfinderBackend.values().map { it.label },
 	                        selected = { it == vfBackend.label },
 	                        onSelect = { label ->
@@ -1202,7 +1306,7 @@ private fun SettingsScreen(
 	                        style = MaterialTheme.typography.labelMedium,
 	                        color = MaterialTheme.colorScheme.onSurface
 	                    )
-                    dev.rawrec.app.ui.components.ChoiceChipRow(
+                    dev.rawrec.app.ui.components.ChoiceChipGrid(
                         options = dev.rawrec.app.ui.ViewfinderMath.OrientationMode.values().map { it.label },
                         selected = { it == vfOrientationMode.label },
                         onSelect = { label ->
@@ -1295,7 +1399,7 @@ private fun SettingsScreen(
                         style = dev.rawrec.app.ui.theme.TelemetryStyle,
                         color = MaterialTheme.colorScheme.primary
                     )
-                    dev.rawrec.app.ui.components.ChoiceChipRow(
+                    dev.rawrec.app.ui.components.ChoiceChipGrid(
                         options = dev.rawrec.app.ui.ViewfinderMath.OVERRIDE_OPTIONS
                             .map { dev.rawrec.app.ui.ViewfinderMath.formatOverride(it) },
                         selected = { it == dev.rawrec.app.ui.ViewfinderMath.formatOverride(vfRotationOverride) },
@@ -1371,58 +1475,14 @@ private fun SettingsScreen(
             }
         }
 
-        item {
+        if (tab == 3) item {
             StaggeredAppear(index = 4) {
                 StatsCard(stats)
             }
         }
 
-        item {
-            StaggeredAppear(index = 4) {
-                if (!stats.active) {
-                    Button(
-                        enabled = camSel != null && sizeSel != null,
-                        onClick = {
-                            val need = buildList {
-                                add(Manifest.permission.CAMERA)
-                                if (recMicOn) add(Manifest.permission.RECORD_AUDIO)
-                            }.filter {
-                                ContextCompat.checkSelfPermission(ctx, it) !=
-                                    PackageManager.PERMISSION_GRANTED
-                            }
-                            if (need.isEmpty()) {
-                                camSel?.let { c -> sizeSel?.let { s ->
-                                    Thread {
-                                        controller.start(
-                                            c.id, s, autoExposure, recUseZstd,
-                                            recPackMipi, recMicOn, recProxyOn,
-                                            uiRotation = uiRotation
-                                        )
-                                    }.start()
-                                } }
-                            } else {
-                                wantStart = true
-                                permission.launch(need.toTypedArray())
-                            }
-                        },
-                        shape = MaterialTheme.shapes.large,
-                        modifier = Modifier.fillMaxWidth()
-                    ) { Text("Start recording") }
-                } else {
-                    Button(
-                        onClick = { Thread { controller.stop() }.start() },
-                        shape = MaterialTheme.shapes.large,
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = androidx.compose.material3.ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.errorContainer,
-                            contentColor = MaterialTheme.colorScheme.onErrorContainer
-                        )
-                    ) { Text("Stop recording") }
-                }
-            }
-        }
 
-        item {
+        if (tab == 2) item {
             Text(
                 "Recordings",
                 style = MaterialTheme.typography.titleMedium,
@@ -1430,53 +1490,73 @@ private fun SettingsScreen(
             )
         }
 
-        items(controller.listRecordings()) { f ->
-            Surface(
-                shape = MaterialTheme.shapes.medium,
-                color = MaterialTheme.colorScheme.surfaceContainer,
-                contentColor = MaterialTheme.colorScheme.onSurface,
+        if (tab == 2) items(controller.listRecordings()) { f ->
+            OutlinedCard(
                 onClick = { inspectFile = f },
+                shape = MaterialTheme.shapes.medium,
+                colors = CardDefaults.outlinedCardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceContainer
+                ),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Row(
-                    Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        Icon(
-                            imageVector = if (f.name.endsWith(".mp4")) RawRecIcons.Movie else RawRecIcons.Record,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary
-                        )
+                ListItem(
+                    headlineContent = {
                         Text(
                             f.name,
-                            style = MaterialTheme.typography.labelMedium
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold
                         )
-                    }
-                    Text(
-                        "%.1f MB".format(f.length() / 1e6),
-                        style = dev.rawrec.app.ui.theme.TelemetryStyle,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                    supportingContent = {
+                        Text(
+                            if (f.name.endsWith(".mp4")) "Hardware HLG MP4 Video" else "RVSP Uncompressed / Zstd RAW Container",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    },
+                    leadingContent = {
+                        Surface(
+                            shape = MaterialTheme.shapes.small,
+                            color = MaterialTheme.colorScheme.primaryContainer,
+                            contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = if (f.name.endsWith(".mp4")) RawRecIcons.Movie else RawRecIcons.Record,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                        }
+                    },
+                    trailingContent = {
+                        Text(
+                            "%.1f MB".format(f.length() / 1e6),
+                            style = dev.rawrec.app.ui.theme.TelemetryEmphasizedStyle,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    },
+                    colors = ListItemDefaults.colors(
+                        containerColor = MaterialTheme.colorScheme.surfaceContainer
                     )
-                }
+                )
             }
         }
 
-        item {
+        if (tab == 3) item {
             StaggeredAppear(index = 6) {
                 ProbeCard()
             }
         }
 
-        item {
+        if (tab == 3) item {
             StaggeredAppear(index = 7) {
                 CrashLogCard()
             }
         }
+    }
     }
 
     inspectFile?.let { file ->

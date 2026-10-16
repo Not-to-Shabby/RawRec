@@ -25,10 +25,21 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.FilledTonalIconButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
@@ -485,7 +496,7 @@ fun GalleryPlayerDeck(
 
     Surface(
         modifier = modifier.fillMaxSize(),
-        color = Color(0xFF090C12)
+        color = MaterialTheme.colorScheme.surfaceDim
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
             // 1. Studio Deck Top Header
@@ -504,26 +515,29 @@ fun GalleryPlayerDeck(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        Surface(
-                            shape = MaterialTheme.shapes.extraSmall,
-                            color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
-                            modifier = Modifier
-                                .size(36.dp)
-                                .clickable {
-                                    audioPlayer?.pause()
-                                    onBack()
-                                }
+                        FilledTonalIconButton(
+                            onClick = {
+                                audioPlayer?.pause()
+                                onBack()
+                            },
+                            shape = MaterialTheme.shapes.small,
+                            colors = IconButtonDefaults.filledTonalIconButtonColors(
+                                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                contentColor = MaterialTheme.colorScheme.primary
+                            ),
+                            modifier = Modifier.size(38.dp)
                         ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Text("←", color = MaterialTheme.colorScheme.primary, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                            }
+                            Icon(
+                                RawRecIcons.Back,
+                                contentDescription = "Back",
+                                modifier = Modifier.size(18.dp)
+                            )
                         }
 
                         Column {
                             Text(
                                 text = file.name,
-                                style = MaterialTheme.typography.bodyMedium,
+                                style = MaterialTheme.typography.titleSmall,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.onSurface
                             )
@@ -551,96 +565,78 @@ fun GalleryPlayerDeck(
                     ) {
                         // Audio Badge
                         Surface(
-                            shape = MaterialTheme.shapes.extraSmall,
-                            color = if (isMp4 || audioRecords.isNotEmpty()) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f) else MaterialTheme.colorScheme.surfaceContainerHighest
+                            shape = MaterialTheme.shapes.small,
+                            color = if (isMp4 || audioRecords.isNotEmpty()) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHighest
                         ) {
                             Row(
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp),
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(4.dp)
                             ) {
                                 Icon(
                                     if (isMp4 || audioRecords.isNotEmpty()) RawRecIcons.Mic else RawRecIcons.VolumeMute,
                                     contentDescription = null,
-                                    tint = if (isMp4 || audioRecords.isNotEmpty()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
-                                    modifier = Modifier.size(12.dp)
+                                    tint = if (isMp4 || audioRecords.isNotEmpty()) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.outline,
+                                    modifier = Modifier.size(13.dp)
                                 )
                                 Text(
                                     text = if (isMp4) "AUDIO STREAM" else if (audioRecords.isNotEmpty()) "48kHz PCM" else "NO AUDIO",
                                     style = DeckLabelStyle,
-                                    color = if (isMp4 || audioRecords.isNotEmpty()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
+                                    color = if (isMp4 || audioRecords.isNotEmpty()) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.outline
                                 )
                             }
                         }
 
                         // Rotate Button
-                        Surface(
-                            shape = MaterialTheme.shapes.extraSmall,
-                            color = MaterialTheme.colorScheme.surfaceContainerHighest,
-                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
-                            modifier = Modifier
-                                .height(34.dp)
-                                .clickable {
-                                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                    videoRotation = (videoRotation + 90) % 360
-                                }
+                        FilledTonalButton(
+                            onClick = {
+                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                videoRotation = (videoRotation + 90) % 360
+                            },
+                            shape = MaterialTheme.shapes.small,
+                            modifier = Modifier.height(36.dp)
                         ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 8.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(4.dp)
-                            ) {
-                                Icon(
-                                    RawRecIcons.Rotate,
-                                    contentDescription = "Rotate",
-                                    tint = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.size(15.dp)
-                                )
-                                Text(
-                                    text = "${videoRotation}°",
-                                    style = DeckLabelStyle,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                            }
+                            Icon(
+                                RawRecIcons.Rotate,
+                                contentDescription = "Rotate",
+                                modifier = Modifier.size(15.dp)
+                            )
+                            Spacer(Modifier.width(4.dp))
+                            Text(
+                                text = "${videoRotation}°",
+                                style = DeckLabelStyle,
+                                fontWeight = FontWeight.Bold
+                            )
                         }
 
                         // Export Button (only for RAW RVSP)
                         if (!isMp4) {
-                            Surface(
-                                shape = MaterialTheme.shapes.extraSmall,
-                                color = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier
-                                    .height(34.dp)
-                                    .clickable {
-                                        audioPlayer?.pause()
-                                        isPlaying = false
-                                        onExportRequested(file, videoRotation, currentBitmap, selectedProfile)
-                                    }
+                            Button(
+                                onClick = {
+                                    audioPlayer?.pause()
+                                    isPlaying = false
+                                    onExportRequested(file, videoRotation, currentBitmap, selectedProfile)
+                                },
+                                shape = MaterialTheme.shapes.small,
+                                modifier = Modifier.height(36.dp)
                             ) {
-                                Row(
-                                    modifier = Modifier.padding(horizontal = 10.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                                ) {
-                                    Icon(
-                                        RawRecIcons.Export,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.onPrimary,
-                                        modifier = Modifier.size(14.dp)
-                                    )
-                                    Text(
-                                        "EXPORT",
-                                        style = DeckLabelStyle,
-                                        fontWeight = FontWeight.Bold,
-                                        color = MaterialTheme.colorScheme.onPrimary
-                                    )
-                                }
+                                Icon(
+                                    RawRecIcons.Export,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                                Spacer(Modifier.width(4.dp))
+                                Text(
+                                    "EXPORT",
+                                    style = DeckLabelStyle,
+                                    fontWeight = FontWeight.Bold
+                                )
                             }
                         }
                     }
                 }
             }
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 
             // 2. Video Viewport Surface
             BoxWithConstraints(
@@ -735,12 +731,12 @@ fun GalleryPlayerDeck(
                             .padding(12.dp)
                     ) {
                         Surface(
-                            shape = MaterialTheme.shapes.extraSmall,
-                            color = Color.Black.copy(alpha = 0.75f),
-                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+                            shape = MaterialTheme.shapes.small,
+                            color = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.88f),
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
                         ) {
                             Row(
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
                                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
@@ -753,7 +749,7 @@ fun GalleryPlayerDeck(
                                 Text(
                                     text = if (isMp4) "${mpPositionMs / 1000}s / ${(mpDurationMs / 1000).coerceAtLeast(1)}s" else "${currentFrameIndex + 1} / ${frames.size}",
                                     style = DeckLabelStyle,
-                                    color = Color.White
+                                    color = MaterialTheme.colorScheme.onSurface
                                 )
                                 val displayFps = if (isPlaying && measuredFps > 0.0) measuredFps else if (isPlaying) fps else 0.0
                                 Text(
@@ -777,21 +773,21 @@ fun GalleryPlayerDeck(
             // 3. Tone / Look Preset Quick Selector Strip (only for RAW RVSP takes)
             if (!isMp4) {
                 Surface(
-                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    color = MaterialTheme.colorScheme.surfaceContainerLow,
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
                             .horizontalScroll(rememberScrollState())
-                            .padding(horizontal = 12.dp, vertical = 6.dp),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            .padding(horizontal = 12.dp, vertical = 4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
                             "LOOK:",
                             style = DeckLabelStyle,
-                            color = MaterialTheme.colorScheme.outline,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(end = 4.dp)
                         )
 
@@ -799,29 +795,50 @@ fun GalleryPlayerDeck(
                             .filter { it != ColorScience.ToneProfile.CUSTOM_LUT }
                             .forEach { profile ->
                                 val isSel = profile == selectedProfile
-                                Surface(
-                                    shape = MaterialTheme.shapes.extraSmall,
-                                    color = if (isSel) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHighest,
-                                    border = if (isSel) BorderStroke(1.dp, MaterialTheme.colorScheme.primary) else null,
-                                    modifier = Modifier.clickable {
+                                FilterChip(
+                                    selected = isSel,
+                                    onClick = {
                                         haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                         prefetchCache.values.forEach { if (!it.isRecycled && !bitmapPool.contains(it)) bitmapPool.offer(it) }
                                         prefetchCache.clear()
                                         selectedProfile = profile
                                         frameVersion++
-                                    }
-                                ) {
-                                    Text(
-                                        text = profile.displayName.substringBefore(" ("),
-                                        style = DeckLabelStyle,
-                                        fontWeight = if (isSel) FontWeight.Bold else FontWeight.Normal,
-                                        color = if (isSel) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp)
+                                    },
+                                    label = {
+                                        Text(
+                                            text = profile.displayName.substringBefore(" ("),
+                                            style = DeckLabelStyle,
+                                            fontWeight = if (isSel) FontWeight.Bold else FontWeight.Medium
+                                        )
+                                    },
+                                    leadingIcon = if (isSel) {
+                                        {
+                                            Icon(
+                                                imageVector = RawRecIcons.Check,
+                                                contentDescription = null,
+                                                modifier = Modifier.size(FilterChipDefaults.IconSize)
+                                            )
+                                        }
+                                    } else null,
+                                    shape = MaterialTheme.shapes.small,
+                                    colors = FilterChipDefaults.filterChipColors(
+                                        containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                                        labelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                                        selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                                        selectedLeadingIconColor = MaterialTheme.colorScheme.primary
+                                    ),
+                                    border = FilterChipDefaults.filterChipBorder(
+                                        enabled = true,
+                                        selected = isSel,
+                                        borderColor = MaterialTheme.colorScheme.outlineVariant,
+                                        selectedBorderColor = MaterialTheme.colorScheme.primary
                                     )
-                                }
+                                )
                             }
                     }
                 }
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
             }
 
             // 4. Cinema Transport Controls Deck
@@ -868,163 +885,164 @@ fun GalleryPlayerDeck(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         // Left: Repeat / Loop toggle
-                        Surface(
-                            shape = MaterialTheme.shapes.extraSmall,
-                            color = if (isRepeat) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHighest,
-                            border = if (isRepeat) BorderStroke(1.dp, MaterialTheme.colorScheme.primary) else null,
-                            modifier = Modifier
-                                .size(38.dp)
-                                .clickable {
-                                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                    isRepeat = !isRepeat
-                                    if (isMp4) {
-                                        mediaPlayer?.isLooping = isRepeat
-                                    }
+                        FilledTonalIconButton(
+                            onClick = {
+                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                isRepeat = !isRepeat
+                                if (isMp4) {
+                                    mediaPlayer?.isLooping = isRepeat
                                 }
+                            },
+                            shape = MaterialTheme.shapes.small,
+                            colors = IconButtonDefaults.filledTonalIconButtonColors(
+                                containerColor = if (isRepeat) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHighest,
+                                contentColor = if (isRepeat) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
+                            ),
+                            modifier = Modifier.size(44.dp)
                         ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Icon(
-                                    RawRecIcons.Repeat,
-                                    contentDescription = "Loop Repeat",
-                                    tint = if (isRepeat) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                            }
+                            Icon(
+                                RawRecIcons.Repeat,
+                                contentDescription = "Loop Repeat",
+                                modifier = Modifier.size(18.dp)
+                            )
                         }
 
-                        // Center: Step -1, Play/Pause, Step +1
+                        // Center: Step -1, Play/Pause (Expressive morphing shape), Step +1
                         Row(
                             horizontalArrangement = Arrangement.spacedBy(16.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             // Step -1
-                            Surface(
-                                shape = CircleShape,
-                                color = MaterialTheme.colorScheme.surfaceContainerHighest,
-                                modifier = Modifier
-                                    .size(42.dp)
-                                    .clickable {
-                                        if (isMp4) {
-                                            val newPos = (mpPositionMs - 1000).coerceAtLeast(0)
-                                            mpPositionMs = newPos
-                                            mediaPlayer?.seekTo(newPos)
-                                        } else {
-                                            isPlaying = false
-                                            audioPlayer?.pause()
-                                            if (currentFrameIndex > 0) {
-                                                currentFrameIndex--
-                                                frames.getOrNull(currentFrameIndex)?.let { audioPlayer?.seekTo(it.tsNs) }
-                                            }
+                            FilledTonalIconButton(
+                                onClick = {
+                                    if (isMp4) {
+                                        val newPos = (mpPositionMs - 1000).coerceAtLeast(0)
+                                        mpPositionMs = newPos
+                                        mediaPlayer?.seekTo(newPos)
+                                    } else {
+                                        isPlaying = false
+                                        audioPlayer?.pause()
+                                        if (currentFrameIndex > 0) {
+                                            currentFrameIndex--
+                                            frames.getOrNull(currentFrameIndex)?.let { audioPlayer?.seekTo(it.tsNs) }
                                         }
                                     }
+                                },
+                                shape = CircleShape,
+                                colors = IconButtonDefaults.filledTonalIconButtonColors(
+                                    containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                                    contentColor = MaterialTheme.colorScheme.onSurface
+                                ),
+                                modifier = Modifier.size(44.dp)
                             ) {
-                                Box(contentAlignment = Alignment.Center) {
-                                    Icon(
-                                        RawRecIcons.StepBack,
-                                        contentDescription = "Step -1",
-                                        tint = MaterialTheme.colorScheme.onSurface,
-                                        modifier = Modifier.size(18.dp)
-                                    )
-                                }
+                                Icon(
+                                    RawRecIcons.StepBack,
+                                    contentDescription = "Step -1",
+                                    modifier = Modifier.size(18.dp)
+                                )
                             }
 
-                            // Play / Pause
+                            // Play / Pause with MD3 Expressive corner morph (circle -> squircle)
+                            val playCornerPercent by animateFloatAsState(
+                                targetValue = if (isPlaying) 28f else 50f,
+                                animationSpec = spring(
+                                    dampingRatio = Spring.DampingRatioMediumBouncy,
+                                    stiffness = Spring.StiffnessMedium
+                                ),
+                                label = "playCorner"
+                            )
                             Surface(
-                                shape = CircleShape,
-                                color = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier
-                                    .size(54.dp)
-                                    .clickable {
-                                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                                        if (isMp4) {
-                                            if (isPlaying) {
-                                                mediaPlayer?.pause()
-                                                isPlaying = false
-                                            } else {
-                                                mediaPlayer?.start()
-                                                isPlaying = true
-                                            }
+                                onClick = {
+                                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    if (isMp4) {
+                                        if (isPlaying) {
+                                            mediaPlayer?.pause()
+                                            isPlaying = false
                                         } else {
-                                            if (isPlaying) {
-                                                isPlaying = false
-                                                audioPlayer?.pause()
-                                            } else {
-                                                if (currentFrameIndex >= frames.size - 1) {
-                                                    currentFrameIndex = 0
-                                                }
-                                                isPlaying = true
+                                            mediaPlayer?.start()
+                                            isPlaying = true
+                                        }
+                                    } else {
+                                        if (isPlaying) {
+                                            isPlaying = false
+                                            audioPlayer?.pause()
+                                        } else {
+                                            if (currentFrameIndex >= frames.size - 1) {
+                                                currentFrameIndex = 0
                                             }
+                                            isPlaying = true
                                         }
                                     }
+                                },
+                                shape = RoundedCornerShape(percent = playCornerPercent.toInt()),
+                                color = MaterialTheme.colorScheme.primary,
+                                contentColor = MaterialTheme.colorScheme.onPrimary,
+                                modifier = Modifier.size(56.dp)
                             ) {
                                 Box(contentAlignment = Alignment.Center) {
                                     Icon(
                                         if (isPlaying) RawRecIcons.Pause else RawRecIcons.Play,
                                         contentDescription = if (isPlaying) "Pause" else "Play",
-                                        tint = MaterialTheme.colorScheme.onPrimary,
                                         modifier = Modifier.size(24.dp)
                                     )
                                 }
                             }
 
                             // Step +1
-                            Surface(
-                                shape = CircleShape,
-                                color = MaterialTheme.colorScheme.surfaceContainerHighest,
-                                modifier = Modifier
-                                    .size(42.dp)
-                                    .clickable {
-                                        if (isMp4) {
-                                            val newPos = (mpPositionMs + 1000).coerceAtMost(mpDurationMs)
-                                            mpPositionMs = newPos
-                                            mediaPlayer?.seekTo(newPos)
-                                        } else {
-                                            isPlaying = false
-                                            audioPlayer?.pause()
-                                            if (currentFrameIndex + 1 < frames.size) {
-                                                currentFrameIndex++
-                                                frames.getOrNull(currentFrameIndex)?.let { audioPlayer?.seekTo(it.tsNs) }
-                                            }
+                            FilledTonalIconButton(
+                                onClick = {
+                                    if (isMp4) {
+                                        val newPos = (mpPositionMs + 1000).coerceAtMost(mpDurationMs)
+                                        mpPositionMs = newPos
+                                        mediaPlayer?.seekTo(newPos)
+                                    } else {
+                                        isPlaying = false
+                                        audioPlayer?.pause()
+                                        if (currentFrameIndex + 1 < frames.size) {
+                                            currentFrameIndex++
+                                            frames.getOrNull(currentFrameIndex)?.let { audioPlayer?.seekTo(it.tsNs) }
                                         }
                                     }
+                                },
+                                shape = CircleShape,
+                                colors = IconButtonDefaults.filledTonalIconButtonColors(
+                                    containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                                    contentColor = MaterialTheme.colorScheme.onSurface
+                                ),
+                                modifier = Modifier.size(44.dp)
                             ) {
-                                Box(contentAlignment = Alignment.Center) {
-                                    Icon(
-                                        RawRecIcons.StepForward,
-                                        contentDescription = "Step +1",
-                                        tint = MaterialTheme.colorScheme.onSurface,
-                                        modifier = Modifier.size(18.dp)
-                                    )
-                                }
+                                Icon(
+                                    RawRecIcons.StepForward,
+                                    contentDescription = "Step +1",
+                                    modifier = Modifier.size(18.dp)
+                                )
                             }
                         }
 
                         // Right: Audio Mute Toggle
-                        Surface(
-                            shape = MaterialTheme.shapes.extraSmall,
-                            color = if (!isMuted && (isMp4 || audioRecords.isNotEmpty())) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHighest,
-                            border = if (!isMuted && (isMp4 || audioRecords.isNotEmpty())) BorderStroke(1.dp, MaterialTheme.colorScheme.primary) else null,
-                            modifier = Modifier
-                                .size(38.dp)
-                                .clickable {
-                                    if (isMp4) {
-                                        isMuted = !isMuted
-                                        val v = if (isMuted) 0f else 1f
-                                        mediaPlayer?.setVolume(v, v)
-                                    } else if (audioRecords.isNotEmpty()) {
-                                        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                        isMuted = audioPlayer?.toggleMute() ?: false
-                                    }
+                        FilledTonalIconButton(
+                            onClick = {
+                                if (isMp4) {
+                                    isMuted = !isMuted
+                                    val v = if (isMuted) 0f else 1f
+                                    mediaPlayer?.setVolume(v, v)
+                                } else if (audioRecords.isNotEmpty()) {
+                                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    isMuted = audioPlayer?.toggleMute() ?: false
                                 }
+                            },
+                            shape = MaterialTheme.shapes.small,
+                            colors = IconButtonDefaults.filledTonalIconButtonColors(
+                                containerColor = if (!isMuted && (isMp4 || audioRecords.isNotEmpty())) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHighest,
+                                contentColor = if (!isMuted && (isMp4 || audioRecords.isNotEmpty())) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.outline
+                            ),
+                            modifier = Modifier.size(44.dp)
                         ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Icon(
-                                    if (isMuted || (!isMp4 && audioRecords.isEmpty())) RawRecIcons.VolumeMute else RawRecIcons.VolumeUp,
-                                    contentDescription = "Mute",
-                                    tint = if (!isMuted && (isMp4 || audioRecords.isNotEmpty())) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                            }
+                            Icon(
+                                if (isMuted || (!isMp4 && audioRecords.isEmpty())) RawRecIcons.VolumeMute else RawRecIcons.VolumeUp,
+                                contentDescription = "Mute",
+                                modifier = Modifier.size(18.dp)
+                            )
                         }
                     }
                 }

@@ -18,7 +18,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
+private val SlateLowest = Color(0xFF07090D)
 private val Slate = Color(0xFF0E1118)
+private val SlateLow = Color(0xFF121720)
 private val SlateHigh = Color(0xFF161C26)
 private val SlateHighest = Color(0xFF222B3A)
 private val SlateHighestUp = Color(0xFF2D384D)
@@ -32,10 +34,10 @@ val CinemaDarkScheme: ColorScheme = darkColorScheme(
     onSecondary = Color(0xFF1C333C),
     secondaryContainer = Color(0xFF334A54),
     onSecondaryContainer = Color(0xFFCEE5EF),
-    tertiary = Color(0xFFFFB4A9),
-    onTertiary = Color(0xFF5F1610),
-    tertiaryContainer = Color(0xFF7D2B22),
-    onTertiaryContainer = Color(0xFFFFDAD4),
+    tertiary = Color(0xFFFFB300),
+    onTertiary = Color(0xFF422C00),
+    tertiaryContainer = Color(0xFF5E4000),
+    onTertiaryContainer = Color(0xFFFFDEA1),
     error = Color(0xFFFF2D55),
     onError = Color(0xFF690013),
     errorContainer = Color(0xFF93001F),
@@ -46,6 +48,8 @@ val CinemaDarkScheme: ColorScheme = darkColorScheme(
     onSurface = Color(0xFFE2E2E9),
     surfaceVariant = SlateHigh,
     onSurfaceVariant = Color(0xFFC4C6D0),
+    surfaceContainerLowest = SlateLowest,
+    surfaceContainerLow = SlateLow,
     surfaceContainer = SlateHigh,
     surfaceContainerHigh = SlateHighest,
     surfaceContainerHighest = SlateHighestUp,
@@ -71,26 +75,57 @@ val ExpressiveShapes: Shapes = Shapes(
     extraLarge = RoundedCornerShape(28.dp)
 )
 
-// MD3 baseline type scale — standard sizes/weights/line-heights; no
-// typeface baked into any scale role.
+// Complete 15-style MD3 baseline type scale — standard sizes/weights/line-heights/tracking;
+// no typeface baked into any scale role.
 val CinemaTypography: Typography = Typography(
+    displayLarge = TextStyle(
+        fontFamily = FontFamily.Default,
+        fontWeight = FontWeight.Normal,
+        fontSize = 57.sp,
+        lineHeight = 64.sp,
+        letterSpacing = (-0.25).sp
+    ),
+    displayMedium = TextStyle(
+        fontFamily = FontFamily.Default,
+        fontWeight = FontWeight.Normal,
+        fontSize = 45.sp,
+        lineHeight = 52.sp,
+        letterSpacing = 0.sp
+    ),
     displaySmall = TextStyle(
         fontFamily = FontFamily.Default,
         fontWeight = FontWeight.Normal,
         fontSize = 36.sp,
-        lineHeight = 44.sp
+        lineHeight = 44.sp,
+        letterSpacing = 0.sp
+    ),
+    headlineLarge = TextStyle(
+        fontFamily = FontFamily.Default,
+        fontWeight = FontWeight.Normal,
+        fontSize = 32.sp,
+        lineHeight = 40.sp,
+        letterSpacing = 0.sp
+    ),
+    headlineMedium = TextStyle(
+        fontFamily = FontFamily.Default,
+        fontWeight = FontWeight.Normal,
+        fontSize = 28.sp,
+        lineHeight = 36.sp,
+        letterSpacing = 0.sp
     ),
     headlineSmall = TextStyle(
         fontFamily = FontFamily.Default,
         fontWeight = FontWeight.Normal,
         fontSize = 24.sp,
-        lineHeight = 32.sp
+        lineHeight = 32.sp,
+        letterSpacing = 0.sp
     ),
     titleLarge = TextStyle(
         fontFamily = FontFamily.Default,
         fontWeight = FontWeight.Normal,
         fontSize = 22.sp,
-        lineHeight = 28.sp
+        lineHeight = 28.sp,
+        letterSpacing = 0.sp
     ),
     titleMedium = TextStyle(
         fontFamily = FontFamily.Default,
@@ -99,12 +134,33 @@ val CinemaTypography: Typography = Typography(
         lineHeight = 24.sp,
         letterSpacing = 0.15.sp
     ),
+    titleSmall = TextStyle(
+        fontFamily = FontFamily.Default,
+        fontWeight = FontWeight.Medium,
+        fontSize = 14.sp,
+        lineHeight = 20.sp,
+        letterSpacing = 0.1.sp
+    ),
+    bodyLarge = TextStyle(
+        fontFamily = FontFamily.Default,
+        fontWeight = FontWeight.Normal,
+        fontSize = 16.sp,
+        lineHeight = 24.sp,
+        letterSpacing = 0.5.sp
+    ),
     bodyMedium = TextStyle(
         fontFamily = FontFamily.Default,
         fontWeight = FontWeight.Normal,
         fontSize = 14.sp,
         lineHeight = 20.sp,
         letterSpacing = 0.25.sp
+    ),
+    bodySmall = TextStyle(
+        fontFamily = FontFamily.Default,
+        fontWeight = FontWeight.Normal,
+        fontSize = 12.sp,
+        lineHeight = 16.sp,
+        letterSpacing = 0.4.sp
     ),
     labelLarge = TextStyle(
         fontFamily = FontFamily.Default,

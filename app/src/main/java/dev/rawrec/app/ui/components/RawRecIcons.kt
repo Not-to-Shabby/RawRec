@@ -545,4 +545,46 @@ object RawRecIcons {
             }
         }
     }
+
+    val Back: ImageVector by lazy {
+        builder("Back") {
+            path(
+                fill = null, stroke = Stroke, strokeLineWidth = STROKE,
+                strokeLineCap = StrokeCap.Round, strokeLineJoin = StrokeJoin.Round
+            ) {
+                moveTo(19f, 12f)
+                lineTo(5f, 12f)
+                moveTo(11.5f, 5.5f)
+                lineTo(5f, 12f)
+                lineTo(11.5f, 18.5f)
+            }
+        }
+    }
+
+    val Close: ImageVector by lazy {
+        builder("Close") {
+            path(
+                fill = null, stroke = Stroke, strokeLineWidth = STROKE,
+                strokeLineCap = StrokeCap.Round, strokeLineJoin = StrokeJoin.Round
+            ) {
+                moveTo(6.5f, 6.5f)
+                lineTo(17.5f, 17.5f)
+                moveTo(17.5f, 6.5f)
+                lineTo(6.5f, 17.5f)
+            }
+        }
+    }
+
+    val Check: ImageVector by lazy {
+        builder("Check") {
+            path(
+                fill = null, stroke = Stroke, strokeLineWidth = STROKE,
+                strokeLineCap = StrokeCap.Round, strokeLineJoin = StrokeJoin.Round
+            ) {
+                moveTo(5f, 12.5f)
+                lineTo(9.8f, 17.2f)
+                lineTo(19f, 7.5f)
+            }
+        }
+    }
 }
