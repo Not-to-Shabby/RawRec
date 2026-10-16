@@ -102,8 +102,27 @@ object HlgMp4Exporter {
                 }
 
                 // 4. Write audio chunks (if present)
+                val meta = runCatching { Rvtool.metaJson(raf) }.getOrDefault(emptyMap())
+                val isFloatAudio = h.audioCodec.startsWith("FLOAT32") ||
+                                   meta["audioFormat"]?.equals("float32", ignoreCase = true) == true ||
+                                   meta["audioBitDepth"] == "32" ||
+                                   audio.any { it.isFloat }
+
                 for (rec in audio) {
-                    val pcm = Rvtool.readPayload(raf, rec.offset, rec.size)
+                    val rawPcm = Rvtool.readPayload(raf, rec.offset, rec.size)
+                    val pcm = if (isFloatAudio) {
+                        val sampleCount = rawPcm.size / 4
+                        val pcm16 = ByteArray(sampleCount * 2)
+                        val bb = java.nio.ByteBuffer.wrap(rawPcm).order(java.nio.ByteOrder.LITTLE_ENDIAN)
+                        val ob = java.nio.ByteBuffer.wrap(pcm16).order(java.nio.ByteOrder.LITTLE_ENDIAN)
+                        for (i in 0 until sampleCount) {
+                            val f = bb.float.coerceIn(-1.0f, 1.0f)
+                            ob.putShort((f * 32767.0f).toInt().toShort())
+                        }
+                        pcm16
+                    } else {
+                        rawPcm
+                    }
                     out.write(pcm)
                     audioOffsets.add(mdatOffset + currentMdatOffset)
                     audioSizes.add(pcm.size)

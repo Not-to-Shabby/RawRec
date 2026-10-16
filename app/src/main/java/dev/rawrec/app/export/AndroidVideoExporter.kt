@@ -45,6 +45,24 @@ object AndroidVideoExporter {
         raf.use {
             val (frames, audio) = Rvtool.scanRecords(raf)
             require(frames.isNotEmpty()) { "No video frames found in $rvspPath" }
+            val meta = runCatching { Rvtool.metaJson(raf) }.getOrDefault(emptyMap())
+            val isFloatAudio = h.audioCodec.startsWith("FLOAT32") ||
+                               meta["audioFormat"]?.equals("float32", ignoreCase = true) == true ||
+                               meta["audioBitDepth"] == "32" ||
+                               audio.any { it.isFloat }
+
+            fun toPcm16Bytes(src: ByteArray): ByteArray {
+                if (!isFloatAudio) return src
+                val sampleCount = src.size / 4
+                val outBytes = ByteArray(sampleCount * 2)
+                val bb = java.nio.ByteBuffer.wrap(src).order(java.nio.ByteOrder.LITTLE_ENDIAN)
+                val ob = java.nio.ByteBuffer.wrap(outBytes).order(java.nio.ByteOrder.LITTLE_ENDIAN)
+                for (i in 0 until sampleCount) {
+                    val f = bb.float.coerceIn(-1.0f, 1.0f)
+                    ob.putShort((f * 32767.0f).toInt().toShort())
+                }
+                return outBytes
+            }
 
             val outFile = File(outMp4Path)
             outFile.parentFile?.mkdirs()
@@ -159,7 +177,8 @@ object AndroidVideoExporter {
                 // Encode Audio Chunk 0 first to register audio track in muxer early
                 val aEnc = audioEncoder
                 if (hasAudio && aEnc != null && audio.isNotEmpty()) {
-                    val pcm0 = Rvtool.readPayload(raf, audio[0].offset, audio[0].size)
+                    val rawPcm0 = Rvtool.readPayload(raf, audio[0].offset, audio[0].size)
+                    val pcm0 = toPcm16Bytes(rawPcm0)
                     val aIn0 = aEnc.dequeueInputBuffer(100_000L)
                     if (aIn0 >= 0) {
                         aEnc.getInputBuffer(aIn0)?.apply {
@@ -247,10 +266,11 @@ object AndroidVideoExporter {
 
                 // Encode & Mux Remaining Audio Chunks (from chunk 1 to end)
                 if (hasAudio && aEnc != null) {
-                    var audioPtsUs = if (audio.isNotEmpty()) (audio[0].size.toLong() * 1_000_000L) / (48000L * 4L) else 0L
+                    var audioPtsUs = if (audio.isNotEmpty()) (toPcm16Bytes(Rvtool.readPayload(raf, audio[0].offset, audio[0].size)).size.toLong() * 1_000_000L) / (48000L * 4L) else 0L
                     for (aIdx in 1 until audio.size) {
                         val aRec = audio[aIdx]
-                        val pcm = Rvtool.readPayload(raf, aRec.offset, aRec.size)
+                        val rawPcm = Rvtool.readPayload(raf, aRec.offset, aRec.size)
+                        val pcm = toPcm16Bytes(rawPcm)
                         val inIdx = aEnc.dequeueInputBuffer(100_000L)
                         if (inIdx >= 0) {
                             aEnc.getInputBuffer(inIdx)?.apply {
