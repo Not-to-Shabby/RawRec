@@ -203,6 +203,78 @@ class RvspRoundTripTest {
         assertEquals(packed.size, frame.payload.size)
     }
 
+    @Test
+    fun `index trailer builds and parses accurately with CRC verification`() {
+        val entries = listOf(
+            RvspIndexEntry(fileOffset = 512L, payloadBytes = 1000, timestampNs = 1_000_000_000L, exposureNs = 8_000_000L, iso = 100, streamType = 0),
+            RvspIndexEntry(fileOffset = 1544L, payloadBytes = 256, timestampNs = 1_000_500_000L, exposureNs = 0L, iso = 0, streamType = 1),
+            RvspIndexEntry(fileOffset = 1832L, payloadBytes = 1024, timestampNs = 1_033_333_333L, exposureNs = 8_000_000L, iso = 100, streamType = 0)
+        )
+        val trailerBytes = RvspIndex.buildTrailer(entries)
+        assertEquals(Rvsp.INDEX_HEADER_BYTES + entries.size * Rvsp.INDEX_ENTRY_BYTES + Rvsp.INDEX_FOOTER_BYTES, trailerBytes.size)
+
+        val parsed = RvspIndex.parseTrailer(trailerBytes)
+        org.junit.Assert.assertNotNull(parsed)
+        assertEquals(entries.size, parsed!!.size)
+        for (i in entries.indices) {
+            assertEquals("entry $i fileOffset", entries[i].fileOffset, parsed[i].fileOffset)
+            assertEquals("entry $i payloadBytes", entries[i].payloadBytes, parsed[i].payloadBytes)
+            assertEquals("entry $i timestampNs", entries[i].timestampNs, parsed[i].timestampNs)
+            assertEquals("entry $i exposureNs", entries[i].exposureNs, parsed[i].exposureNs)
+            assertEquals("entry $i iso", entries[i].iso, parsed[i].iso)
+            assertEquals("entry $i streamType", entries[i].streamType, parsed[i].streamType)
+        }
+
+        // Test corrupted CRC detection
+        val poisoned = trailerBytes.copyOf()
+        poisoned[20] = (poisoned[20] + 1).toByte() // poison first payload byte in table
+        val corruptedResult = RvspIndex.parseTrailer(poisoned)
+        org.junit.Assert.assertNull("Corrupted index CRC must be rejected", corruptedResult)
+    }
+
+    @Test
+    fun `writer index trailer enables fast seeking in Rvtool scanRecords`() {
+        val tempFile = java.io.File.createTempFile("indexed_test_", ".rvsp")
+        try {
+            var trailerOffset = 0L
+            val payloads = List(5) { i -> ByteArray(500 + i * 10) { (it + i).toByte() } }
+            java.io.FileOutputStream(tempFile).use { fos ->
+                val writer = RvspWriter(fos, testHeader())
+                payloads.forEachIndexed { i, p ->
+                    writer.writeFrameRaw(p, i * 33_333_333L, 8_000_000L, 200)
+                    writer.writeAudioChunk(ByteArray(128), i * 33_333_333L + 10_000L)
+                }
+                trailerOffset = writer.writeIndexTrailer()
+            }
+            assertTrue(trailerOffset > 512L)
+
+            // Patch header flags and indexOffset (simulating RecordingController clean close)
+            java.io.RandomAccessFile(tempFile, "rw").use { raf ->
+                val buf = java.nio.ByteBuffer.allocate(8).order(Rvsp.LE).putLong(trailerOffset)
+                raf.seek(224L)
+                raf.write(buf.array())
+
+                raf.seek(10L)
+                val curFlags = (raf.read() and 0xFF) or ((raf.read() and 0xFF) shl 8)
+                val newFlags = curFlags or Rvsp.FLAG_HAS_INDEX
+                val flagsBuf = java.nio.ByteBuffer.allocate(2).order(Rvsp.LE).putShort(newFlags.toShort())
+                raf.seek(10L)
+                raf.write(flagsBuf.array())
+            }
+
+            // Verify Rvtool.scanRecords reads fast path
+            java.io.RandomAccessFile(tempFile, "r").use { raf ->
+                val (scannedFrames, scannedAudio) = dev.rawrec.tool.Rvtool.scanRecords(raf)
+                assertEquals(5, scannedFrames.size)
+                assertEquals(5, scannedAudio.size)
+                assertEquals(0L, scannedFrames[0].tsNs)
+                assertEquals(payloads[0].size, scannedFrames[0].size)
+            }
+        } finally {
+            tempFile.delete()
+        }
+    }
+
     private fun totalRecordBytes(payloads: List<ByteArray>): Int =
         payloads.sumOf { Rvsp.RECORD_HEADER_BYTES + it.size }
 }

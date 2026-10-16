@@ -203,10 +203,48 @@ When exporting or transcode-streaming RVSP takes into Adobe CinemaDNG format, fi
 
 ---
 
-## 8. Crash Recovery & Resilience Rules
+## 8. Index Trailer Specification (`IDXT`)
 
-1. **Torn-Tail Scanning**: If recording halts abruptly (e.g. battery pulled, kernel panic), the container parser scans records sequentially from byte `512 + metaJsonSize`.
-2. **Magic Validation**: When parsing a record:
+To support instantaneous sub-millisecond random access and timeline scrubbing without scanning gigabytes of payload data, completed `.rvsp` takes append an index trailer at file offset `Header.indexOffset` with `Header.flags |= FLAG_HAS_INDEX (1)`.
+
+### A. Trailer Layout Structure
+```
++------------------------------------------------------------------------+
+| 16-Byte Trailer Header                                                 |
+|   - magic: char[4] = "IDXT" (0x49 0x44 0x58 0x54)                      |
+|   - version: uint32 = 1                                                |
+|   - entryCount: uint32 (Number of indexed records)                     |
+|   - entryBytes: uint32 = 32 (Size of each index entry)                 |
++------------------------------------------------------------------------+
+| Entry Array (entryCount * 32 Bytes, Little-Endian)                     |
+|   Each Entry (32 Bytes):                                               |
+|   - fileOffset: uint64 (Absolute file byte offset to 32B record header)|
+|   - payloadBytes: uint32 (Byte size of compressed/packed payload)      |
+|   - timestampNs: uint64 (Hardware presentation timestamp)              |
+|   - exposureNs: uint64 (Sensor exposure time in ns; 0 for audio)       |
+|   - iso: uint16 (Sensor ISO sensitivity; 0 for audio)                  |
+|   - streamType: uint8 (0 = Video Frame "FRM\0", 1 = Audio Chunk "AUD\0")|
+|   - reserved: uint8 = 0                                                |
++------------------------------------------------------------------------+
+| 16-Byte Trailer Footer                                                 |
+|   - totalEntries: uint32 (Mirrors entryCount for sanity verification)  |
+|   - crc32: uint32 (CRC32 checksum of the Entry Array)                  |
+|   - trailerSize: uint32 (16 + entryCount * 32 + 16)                    |
+|   - endMagic: char[4] = "IDXT"                                         |
++------------------------------------------------------------------------+
+```
+
+---
+
+## 9. Crash Recovery & Dual-Mode Resilience Rules
+
+1. **Dual-Mode Seeking Protocol**:
+   - When opening an `.rvsp` container, parsers check:
+     $$\text{hasIndex} = (\text{Header.flags} \ \& \ 1 \neq 0) \ \land \ (\text{Header.indexOffset} > 0) \ \land \ (\text{Header.indexOffset} < \text{fileSize})$$
+   - **Fast-Path**: If true, seek directly to `Header.indexOffset` and parse the `IDXT` trailer in **1 disk read (~1 ms)**.
+   - **Fallback (Torn-Tail Recovery)**: If `indexOffset == 0` (sudden battery disconnect, Android LMK process termination, or corrupted index table), parsers seamlessly and automatically fall back to sequential record scanning.
+2. **Sequential Scanning Rules**:
+   - Begin scan at byte offset `512 + Header.metaJsonSize`.
    - Verify `magic == "FRM\0"` or `magic == "AUD\0"`.
    - Verify `payloadBytes > 0` and `offset + 32 + payloadBytes <= fileSize`.
    - If a record header is truncated, non-matching, or exceeds `fileSize`, the parser ceases scanning and marks the previous valid record as the definitive end of the take. All prior recorded audio and video frames remain 100% intact and valid.

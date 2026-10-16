@@ -53,6 +53,7 @@ data class RecStats(
     val workers: Int = 0,
     val error: String? = null,
     val thermalStage: String = "NONE",
+    val entropyStage: String = "NORMAL",
     val audioPeakLeftDb: Float = -60f,
     val audioPeakRightDb: Float = -60f
 ) {
@@ -120,6 +121,8 @@ class RecordingController(private val context: Context) {
     @Volatile private var stopping = false
     @Volatile private var latestAudioPeakLeftDb = -60f
     @Volatile private var latestAudioPeakRightDb = -60f
+    @Volatile private var activeEntropyStage = EntropyStage.NORMAL
+    @Volatile private var activeEntropyLevel = -3
     private val droppedInQ = AtomicLong()
     private val droppedMidQ = AtomicLong()
     private val droppedOutQ = AtomicLong()
@@ -526,13 +529,25 @@ class RecordingController(private val context: Context) {
         val compressWorkers = socTuning.recommendedCompressWorkers
         midQ = ArrayBlockingQueue(socTuning.recommendedQueueCapacities.midCapacity)
         payloadPool.clear()
+        val poolCapacity = socTuning.recommendedQueueCapacities.midCapacity + 3
         val packedFrameSize = if (canPack) MipiPacker.packedSize(effW * effH, bitDepth) else 0
         if (packedFrameSize > 0) {
-            val poolCapacity = socTuning.recommendedQueueCapacities.midCapacity + 3
             repeat(poolCapacity) {
                 payloadPool.offer(ByteArray(packedFrameSize))
             }
         }
+        val governor = EntropyGovernor(
+            midCapacity = socTuning.recommendedQueueCapacities.midCapacity,
+            outCapacity = socTuning.recommendedQueueCapacities.outCapacity,
+            totalPoolBuffers = poolCapacity,
+            nominalLevel = socTuning.zstdLevel
+        ) { stage, level ->
+            activeEntropyStage = stage
+            activeEntropyLevel = level
+            AppLog.w(TAG, "entropy governor -> stage=$stage level=$level (midQ=${midQ.size} pool=${payloadPool.size})")
+        }
+        activeEntropyStage = EntropyStage.NORMAL
+        activeEntropyLevel = socTuning.zstdLevel
         lastStartedSize = size
         activeCodec = codec
 
@@ -673,6 +688,7 @@ class RecordingController(private val context: Context) {
                     perfSession.startHintSession(workerTids.toIntArray(), framePeriodNs)
                 }
                 val encoder = codec.openEncoder()
+                var currentEncoderLevel = socTuning.zstdLevel
                 try {
                     while (!stopping || midQ.isNotEmpty()) {
                         // Thermal degradation gate: extra workers sleep when thermal throttles
@@ -686,7 +702,16 @@ class RecordingController(private val context: Context) {
                             val rawPayload = wi.payload
                             var payload = rawPayload
                             if (wi.needsEncode) {
-                                payload = encoder.encode(rawPayload)
+                                val targetLevel = activeEntropyLevel
+                                if (targetLevel != currentEncoderLevel) {
+                                    encoder.setCompressionLevel(targetLevel)
+                                    currentEncoderLevel = targetLevel
+                                }
+                                payload = if (activeEntropyStage == EntropyStage.CRITICAL && payloadPool.isEmpty()) {
+                                    rawPayload
+                                } else {
+                                    encoder.encode(rawPayload)
+                                }
                                 payloadPool.offer(rawPayload)
                             }
                             val done = ProcessedItem(payload, wi.tsNs, wi.expNs, wi.iso)
@@ -754,6 +779,7 @@ class RecordingController(private val context: Context) {
                         }
                         droppedMidQ.incrementAndGet()
                     }
+                    governor.evaluate(midQ.size, outQ.size, payloadPool.size)
                     val t3 = System.nanoTime()
                     if (++extractCount % 30 == 0) {
                         val packMs = (t1 - t0) / 1_000_000.0
@@ -867,6 +893,7 @@ class RecordingController(private val context: Context) {
             perfSession.notifyPowerkeeperRecordingEnd()
             CaptureForegroundService.stop(context)
             activeThermalStage = SocStage.NONE
+            activeEntropyStage = EntropyStage.NORMAL
             lastStartedSize = null
             activeCodec = null
             payloadPool.clear()
@@ -1123,6 +1150,7 @@ class RecordingController(private val context: Context) {
                 avgFps = avgFpsOf(lastFrameTimestamp),
                 elapsedMs = if (activeStartRealtime > 0) now - activeStartRealtime else s.elapsedMs,
                 thermalStage = activeThermalStage.name,
+                entropyStage = activeEntropyStage.name,
                 audioPeakLeftDb = latestAudioPeakLeftDb,
                 audioPeakRightDb = latestAudioPeakRightDb
             )
@@ -1224,6 +1252,7 @@ class RecordingController(private val context: Context) {
         val metaPaddingBytes = maxOf(16384, ((rawBytesLen + 4096 + 511) / 512) * 512)
         val initialMeta = initialMetaRaw.padEnd(metaPaddingBytes, ' ')
 
+        var trailerOffset = 0L
         try {
             FileOutputStream(file).use { fos ->
                 val fdObj = runCatching { fos.fd }.getOrNull()
@@ -1327,6 +1356,7 @@ class RecordingController(private val context: Context) {
                                 }
                             }
                         }
+                        trailerOffset = w.writeIndexTrailer()
                     }
                 }
             }
@@ -1367,10 +1397,26 @@ class RecordingController(private val context: Context) {
                 val finalBytes = finalMetaRaw.padEnd(metaPaddingBytes, ' ').toByteArray(Charsets.UTF_8)
                 if (finalBytes.size == metaPaddingBytes && file.exists()) {
                     java.io.RandomAccessFile(file, "rw").use { raf ->
+                        if (trailerOffset > 0L) {
+                            // 1. Patch indexOffset at byte offset 224 (8 bytes LE)
+                            val indexBuf = ByteBuffer.allocate(8).order(Rvsp.LE).putLong(trailerOffset)
+                            raf.seek(224L)
+                            raf.write(indexBuf.array())
+
+                            // 2. Patch flags at byte offset 10 (2 bytes LE) with FLAG_HAS_INDEX
+                            raf.seek(10L)
+                            val b0 = raf.read() and 0xFF
+                            val b1 = raf.read() and 0xFF
+                            val curFlags = b0 or (b1 shl 8)
+                            val newFlags = curFlags or Rvsp.FLAG_HAS_INDEX
+                            val flagsBuf = ByteBuffer.allocate(2).order(Rvsp.LE).putShort(newFlags.toShort())
+                            raf.seek(10L)
+                            raf.write(flagsBuf.array())
+                        }
                         raf.seek(Rvsp.HEADER_SIZE.toLong())
                         raf.write(finalBytes)
                     }
-                    AppLog.i(TAG, "patched final metadata into ${file.name}: dropped=$finalDropped gaps=$gapCount frames=$written")
+                    AppLog.i(TAG, "patched final metadata into ${file.name}: dropped=$finalDropped gaps=$gapCount frames=$written indexOffset=$trailerOffset")
                 } else {
                     AppLog.e(TAG, "metadata patch size mismatch: expected $metaPaddingBytes but got ${finalBytes.size}")
                 }

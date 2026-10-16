@@ -141,6 +141,12 @@ class RvspReader:
         self.file.seek(0, os.SEEK_END)
         file_size = self.file.tell()
 
+        # 1. Fast-path: Check for IDXT index trailer (O(1) seek, ~1ms load)
+        if (self.header.flags & 1) != 0 and self.header.index_offset > 0 and self.header.index_offset < file_size:
+            if self._read_index_trailer(file_size):
+                return
+
+        # 2. Sequential fallback (torn-tail / crash recovery)
         cursor = 512 + self.header.meta_json_size
         while cursor + 32 <= file_size:
             self.file.seek(cursor)
@@ -161,6 +167,37 @@ class RvspReader:
                 self.audio_chunks.append(rec)
 
             cursor += 32 + payload_len
+
+    def _read_index_trailer(self, file_size: int) -> bool:
+        if self.header.index_offset + 32 > file_size:
+            return False
+        self.file.seek(self.header.index_offset)
+        th = self.file.read(16)
+        if len(th) < 16 or not th.startswith(b"IDXT"):
+            return False
+        magic, version, entry_count, entry_bytes = struct.unpack_from("<4sIII", th, 0)
+        if version != 1 or entry_bytes != 32 or entry_count > 1000000:
+            return False
+        expected_size = 16 + entry_count * 32 + 16
+        if self.header.index_offset + expected_size > file_size:
+            return False
+        table = self.file.read(entry_count * 32)
+        if len(table) < entry_count * 32:
+            return False
+        tf = self.file.read(16)
+        if len(tf) < 16 or not tf.endswith(b"IDXT"):
+            return False
+        for i in range(entry_count):
+            offset, payload_len, ts_ns, exp_ns, iso, stream_type, _ = struct.unpack_from("<QIQQHBB", table, i * 32)
+            magic_tag = b"FRM\x00" if stream_type == 0 else b"AUD\x00"
+            rec = RvspRecord(magic_tag, payload_len, ts_ns, exp_ns, iso, i, offset + 32)
+            if stream_type == 0:
+                self.frames.append(rec)
+            elif stream_type == 1:
+                self.audio_chunks.append(rec)
+        self.frames.sort(key=lambda r: r.ts_ns)
+        self.audio_chunks.sort(key=lambda r: r.ts_ns)
+        return len(self.frames) > 0 or len(self.audio_chunks) > 0
 
     def read_payload(self, record: RvspRecord) -> bytes:
         self.file.seek(record.data_offset)

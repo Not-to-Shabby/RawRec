@@ -917,6 +917,15 @@ Java_dev_rawrec_app_codec_ZstdNative_freeCCtx(JNIEnv*, jclass, jlong handle) {
     if (cctx) ZSTD_freeCCtx(cctx);
 }
 
+extern "C" JNIEXPORT jint JNICALL
+Java_dev_rawrec_app_codec_ZstdNative_setCCtxLevel(
+        JNIEnv*, jclass, jlong handle, jint level) {
+    auto* cctx = reinterpret_cast<ZSTD_CCtx*>(handle);
+    if (!cctx) return -1;
+    size_t rc = ZSTD_CCtx_setParameter(cctx, ZSTD_c_compressionLevel, static_cast<int>(level));
+    return ZSTD_isError(rc) ? -1 : 0;
+}
+
 extern "C" JNIEXPORT jbyteArray JNICALL
 Java_dev_rawrec_app_codec_ZstdNative_decompress(
         JNIEnv* env, jclass, jbyteArray src, jlong maxOut) {

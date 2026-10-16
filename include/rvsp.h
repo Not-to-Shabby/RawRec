@@ -308,6 +308,14 @@ private:
         fileStream_.seekg(0, std::ios::end);
         const uint64_t fileSize = fileStream_.tellg();
 
+        // 1. Fast path: check for IDXT index trailer (O(1) seek, ~1ms load)
+        if ((header_.flags & 1) != 0 && header_.indexOffset > 0 && header_.indexOffset < fileSize) {
+            if (readIndexTrailer(fileSize)) {
+                return;
+            }
+        }
+
+        // 2. Sequential fallback (torn-tail / crash recovery)
         uint64_t cursor = 512 + header_.metaJsonSize;
         std::vector<uint8_t> recHdr(32);
 
@@ -336,6 +344,62 @@ private:
 
             cursor += 32 + r.payloadBytes;
         }
+    }
+
+private:
+    bool readIndexTrailer(uint64_t fileSize) {
+        if (header_.indexOffset + 32 > fileSize) return false;
+        fileStream_.seekg(header_.indexOffset, std::ios::beg);
+
+        std::vector<uint8_t> th(16);
+        fileStream_.read(reinterpret_cast<char*>(th.data()), 16);
+        if (fileStream_.gcount() < 16) return false;
+        if (std::memcmp(th.data(), "IDXT", 4) != 0) return false;
+
+        uint32_t version = readU32LE(th.data() + 4);
+        if (version != 1) return false;
+        uint32_t entryCount = readU32LE(th.data() + 8);
+        uint32_t entryBytes = readU32LE(th.data() + 12);
+        if (entryBytes != 32 || entryCount > 1000000) return false;
+
+        uint64_t expectedTrailerSize = 16 + static_cast<uint64_t>(entryCount) * 32 + 16;
+        if (header_.indexOffset + expectedTrailerSize > fileSize) return false;
+
+        std::vector<uint8_t> table(entryCount * 32);
+        fileStream_.read(reinterpret_cast<char*>(table.data()), entryCount * 32);
+        if (static_cast<size_t>(fileStream_.gcount()) < entryCount * 32) return false;
+
+        std::vector<uint8_t> tf(16);
+        fileStream_.read(reinterpret_cast<char*>(tf.data()), 16);
+        if (fileStream_.gcount() < 16) return false;
+        if (std::memcmp(tf.data() + 12, "IDXT", 4) != 0) return false;
+
+        frames_.reserve(entryCount);
+        for (uint32_t i = 0; i < entryCount; i++) {
+            const uint8_t* p = table.data() + i * 32;
+            Record r;
+            r.dataOffset = readU64LE(p) + 32;
+            r.payloadBytes = readU32LE(p + 8);
+            r.timestampNs = readU64LE(p + 12);
+            r.exposureNs = readU64LE(p + 20);
+            r.iso = readU16LE(p + 28);
+            uint8_t streamType = p[30];
+
+            if (streamType == 0) {
+                std::memcpy(r.magic, "FRM\0", 4);
+                frames_.push_back(r);
+            } else if (streamType == 1) {
+                std::memcpy(r.magic, "AUD\0", 4);
+                audioChunks_.push_back(r);
+            }
+        }
+        std::sort(frames_.begin(), frames_.end(), [](const Record& a, const Record& b) {
+            return a.timestampNs < b.timestampNs;
+        });
+        std::sort(audioChunks_.begin(), audioChunks_.end(), [](const Record& a, const Record& b) {
+            return a.timestampNs < b.timestampNs;
+        });
+        return !frames_.empty() || !audioChunks_.empty();
     }
 };
 

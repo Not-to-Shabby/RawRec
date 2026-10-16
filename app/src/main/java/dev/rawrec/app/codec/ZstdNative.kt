@@ -12,6 +12,7 @@ object ZstdNative {
     external fun createCCtx(level: Int, nbWorkers: Int): Long
     external fun createCCtxEx(level: Int, nbWorkers: Int, windowLog: Int): Long
     external fun compressCtx(handle: Long, src: ByteArray): ByteArray?
+    external fun setCCtxLevel(handle: Long, level: Int): Int
     external fun freeCCtx(handle: Long)
 
     external fun decompressInto(src: ByteArray, dst: ByteArray): Int

@@ -2,6 +2,7 @@ package dev.rawrec.app.codec
 
 interface FrameEncoder : AutoCloseable {
     fun encode(src: ByteArray): ByteArray
+    fun setCompressionLevel(level: Int): Boolean = false
 }
 
 interface FrameDecoder : AutoCloseable {
@@ -68,6 +69,8 @@ class ZstdFrameCodec(
             override fun encode(src: ByteArray) =
                 ZstdNative.compressCtx(handle, src)
                     ?: throw IllegalStateException("zstd compress failed")
+            override fun setCompressionLevel(level: Int): Boolean =
+                ZstdNative.setCCtxLevel(handle, level) == 0
             override fun close() = ZstdNative.freeCCtx(handle)
         }
     }

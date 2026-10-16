@@ -8,6 +8,7 @@ object Rvsp {
     val FILE_MAGIC = byteArrayOf(0x52, 0x56, 0x53, 0x50)
     val FRAME_MAGIC = byteArrayOf(0x46, 0x52, 0x4D, 0x00)
     val AUDIO_MAGIC = byteArrayOf(0x41, 0x55, 0x44, 0x00)
+    val INDEX_MAGIC = byteArrayOf(0x49, 0x44, 0x58, 0x54) // "IDXT"
 
     const val VERSION_MAJOR = 0
     const val VERSION_MINOR = 1
@@ -17,6 +18,10 @@ object Rvsp {
     const val RECORD_HEADER_BYTES = 32
     const val MAX_RECORD_PAYLOAD = 256 * 1024 * 1024
     const val MAX_META_JSON_BYTES = 64 * 1024
+
+    const val INDEX_ENTRY_BYTES = 32
+    const val INDEX_HEADER_BYTES = 16
+    const val INDEX_FOOTER_BYTES = 16
 
     const val CODEC_STORE = "STORE"
     const val CODEC_LZ4 = "LZ4"
@@ -82,7 +87,7 @@ data class RvspHeader(
         require(width > 0 && height > 0) { "invalid dimensions ${width}x$height" }
         require(bitDepth in 8..16) { "unsupported bit depth $bitDepth" }
         require(cfaPattern in 0..3) { "invalid cfa pattern $cfaPattern" }
-        require(packing in 0..2) { "invalid packing $packing" }
+        require(packing in 0..4) { "invalid packing $packing" }
         require(blackLevel.size == 4) { "blackLevel must have 4 entries" }
         require(colorMatrix.size == 9) { "colorMatrix must be 3x3 row-major" }
         require(asShotNeutral.size == 3) { "asShotNeutral must have 3 entries" }
@@ -133,9 +138,9 @@ data class RvspHeader(
             require(magic.contentEquals(Rvsp.FILE_MAGIC)) { "bad magic, not an RVSP file" }
             val major = buf.short.toInt()
             require(major == Rvsp.VERSION_MAJOR) { "unsupported version $major.x" }
-            buf.short
-            buf.short
-            buf.short
+            buf.short // minor
+            buf.short // headerSize
+            val flags = buf.short.toInt() and 0xFFFF
             val videoCodec = Rvsp.readFixedString(buf, 16)
             val audioCodec = Rvsp.readFixedString(buf, 8)
             val width = buf.int
@@ -178,7 +183,7 @@ data class RvspHeader(
                 cameraModel = model,
                 lensId = lens,
                 indexOffset = indexOffset,
-                flags = 0,
+                flags = flags,
                 metaJson = json
             )
         }
@@ -203,4 +208,92 @@ sealed class RvspRecord {
         override val sequence: Long,
         override val payload: ByteArray
     ) : RvspRecord()
+}
+
+/**
+ * Pre-computed index record entry for instantaneous 1 ms frame and audio random access.
+ * Binary size: exactly 32 bytes (Little-Endian).
+ */
+data class RvspIndexEntry(
+    val fileOffset: Long,
+    val payloadBytes: Int,
+    val timestampNs: Long,
+    val exposureNs: Long = 0L,
+    val iso: Int = 0,
+    val streamType: Byte = 0 // 0 = Video Frame, 1 = Audio Chunk
+)
+
+object RvspIndex {
+    fun buildTrailer(entries: List<RvspIndexEntry>): ByteArray {
+        val totalBytes = Rvsp.INDEX_HEADER_BYTES + entries.size * Rvsp.INDEX_ENTRY_BYTES + Rvsp.INDEX_FOOTER_BYTES
+        val buf = ByteBuffer.allocate(totalBytes).order(Rvsp.LE)
+        buf.put(Rvsp.INDEX_MAGIC)
+        buf.putInt(1) // version
+        buf.putInt(entries.size)
+        buf.putInt(Rvsp.INDEX_ENTRY_BYTES)
+
+        val crc = java.util.zip.CRC32()
+        entries.forEach { e ->
+            val entryBuf = ByteBuffer.allocate(Rvsp.INDEX_ENTRY_BYTES).order(Rvsp.LE)
+            entryBuf.putLong(e.fileOffset)
+            entryBuf.putInt(e.payloadBytes)
+            entryBuf.putLong(e.timestampNs)
+            entryBuf.putLong(e.exposureNs)
+            entryBuf.putShort(e.iso.coerceIn(0, 65535).toShort())
+            entryBuf.put(e.streamType)
+            entryBuf.put(0.toByte()) // reserved padding
+            val arr = entryBuf.array()
+            crc.update(arr)
+            buf.put(arr)
+        }
+
+        buf.putInt(entries.size)
+        buf.putInt(crc.value.toInt())
+        buf.putInt(totalBytes)
+        buf.put(Rvsp.INDEX_MAGIC)
+        return buf.array()
+    }
+
+    fun parseTrailer(bytes: ByteArray): List<RvspIndexEntry>? {
+        if (bytes.size < Rvsp.INDEX_HEADER_BYTES + Rvsp.INDEX_FOOTER_BYTES) return null
+        val buf = ByteBuffer.wrap(bytes).order(Rvsp.LE)
+        val magic = ByteArray(4).also { buf.get(it) }
+        if (!magic.contentEquals(Rvsp.INDEX_MAGIC)) return null
+        val version = buf.int
+        if (version != 1) return null
+        val entryCount = buf.int
+        val entryBytes = buf.int
+        if (entryCount < 0 || entryBytes != Rvsp.INDEX_ENTRY_BYTES) return null
+        val expectedTotal = Rvsp.INDEX_HEADER_BYTES + entryCount * Rvsp.INDEX_ENTRY_BYTES + Rvsp.INDEX_FOOTER_BYTES
+        if (bytes.size < expectedTotal) return null
+
+        val entries = ArrayList<RvspIndexEntry>(entryCount)
+        val crc = java.util.zip.CRC32()
+        for (i in 0 until entryCount) {
+            val startPos = buf.position()
+            val offset = buf.long
+            val payloadLen = buf.int
+            val tsNs = buf.long
+            val expNs = buf.long
+            val iso = buf.short.toInt() and 0xFFFF
+            val streamType = buf.get()
+            buf.get() // reserved padding
+            if (offset < 0 || payloadLen < 0) return null
+            crc.update(bytes, startPos, Rvsp.INDEX_ENTRY_BYTES)
+            entries.add(RvspIndexEntry(offset, payloadLen, tsNs, expNs, iso, streamType))
+        }
+
+        // Verify footer
+        val footerEntries = buf.int
+        val checksum = buf.int
+        val trailerSize = buf.int
+        val endMagic = ByteArray(4).also { buf.get(it) }
+        if (footerEntries != entryCount || !endMagic.contentEquals(Rvsp.INDEX_MAGIC) || trailerSize != expectedTotal) {
+            return null
+        }
+        if (crc.value.toInt() != checksum) {
+            return null // CRC mismatch (corrupted index table)
+        }
+        return entries
+    }
 }

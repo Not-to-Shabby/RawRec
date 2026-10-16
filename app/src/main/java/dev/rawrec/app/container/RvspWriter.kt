@@ -16,6 +16,8 @@ class RvspWriter(
 
     private val out = BufferedOutputStream(output, WRITE_BUFFER_BYTES)
     private var sequence = 0L
+    private var currentFileOffset = 0L
+    val indexEntries = ArrayList<RvspIndexEntry>()
 
     var framesWritten: Long = 0L
         private set
@@ -24,7 +26,9 @@ class RvspWriter(
         private set
 
     init {
-        out.write(header.toBytes())
+        val headBytes = header.toBytes()
+        out.write(headBytes)
+        currentFileOffset = headBytes.size.toLong()
     }
 
     @Synchronized
@@ -56,6 +60,30 @@ class RvspWriter(
         require(payload.size <= Rvsp.MAX_RECORD_PAYLOAD) {
             "record payload too large: ${payload.size}"
         }
+        val recordOffset = currentFileOffset
+        if (magic.contentEquals(Rvsp.FRAME_MAGIC)) {
+            indexEntries.add(
+                RvspIndexEntry(
+                    fileOffset = recordOffset,
+                    payloadBytes = payload.size,
+                    timestampNs = timestampNs,
+                    exposureNs = extra1,
+                    iso = extra2,
+                    streamType = 0
+                )
+            )
+        } else if (magic.contentEquals(Rvsp.AUDIO_MAGIC)) {
+            indexEntries.add(
+                RvspIndexEntry(
+                    fileOffset = recordOffset,
+                    payloadBytes = payload.size,
+                    timestampNs = timestampNs,
+                    exposureNs = 0L,
+                    iso = 0,
+                    streamType = 1
+                )
+            )
+        }
         val head = ByteBuffer.allocate(Rvsp.RECORD_HEADER_BYTES).order(Rvsp.LE)
             .put(magic)
             .putInt(payload.size)
@@ -66,6 +94,22 @@ class RvspWriter(
         sequence++
         out.write(head.array())
         out.write(payload)
+        currentFileOffset += Rvsp.RECORD_HEADER_BYTES + payload.size
+    }
+
+    /**
+     * Appends an IDXT Index Trailer after the last record and flushes to stream.
+     * Returns the absolute byte offset where the index trailer starts.
+     */
+    @Synchronized
+    fun writeIndexTrailer(): Long {
+        if (indexEntries.isEmpty()) return 0L
+        val trailerOffset = currentFileOffset
+        val trailerBytes = RvspIndex.buildTrailer(indexEntries)
+        out.write(trailerBytes)
+        currentFileOffset += trailerBytes.size
+        out.flush()
+        return trailerOffset
     }
 
     override fun flush() {

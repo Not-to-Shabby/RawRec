@@ -307,6 +307,26 @@ object Rvtool {
     }
 
     fun scanRecords(raf: RandomAccessFile): Pair<List<FrameRec>, List<AudioRec>> {
+        // 1. Fast-path: Check for valid IDXT Index Trailer (O(1) seek, ~1ms load)
+        val head512 = ByteArray(512)
+        val origPos = raf.filePointer
+        raf.seek(0L)
+        if (raf.read(head512) == 512) {
+            val buf = ByteBuffer.wrap(head512).order(ByteOrder.LITTLE_ENDIAN)
+            val flags = buf.getShort(10).toInt() and 0xFFFF
+            val indexOffset = buf.getLong(224)
+            val fileLen = raf.length()
+            if ((flags and 1) != 0 && indexOffset > 0L && indexOffset < fileLen) {
+                val fastResult = runCatching {
+                    readIndexTrailer(raf, indexOffset, fileLen)
+                }.getOrNull()
+                if (fastResult != null && (fastResult.first.isNotEmpty() || fastResult.second.isNotEmpty())) {
+                    return fastResult
+                }
+            }
+        }
+
+        // 2. Fallback: Sequential record scan (torn-tail / unindexed crash recovery)
         val frames = mutableListOf<FrameRec>()
         val audio = mutableListOf<AudioRec>()
         raf.seek(512L + metaSize(raf))
@@ -342,6 +362,28 @@ object Rvtool {
 
     fun scanFrames(raf: RandomAccessFile): List<FrameRec> = scanRecords(raf).first
     fun scanAudio(raf: RandomAccessFile): List<AudioRec> = scanRecords(raf).second
+
+    private fun readIndexTrailer(raf: RandomAccessFile, indexOffset: Long, fileLen: Long): Pair<List<FrameRec>, List<AudioRec>>? {
+        val remaining = (fileLen - indexOffset).toInt()
+        if (remaining < dev.rawrec.app.container.Rvsp.INDEX_HEADER_BYTES + dev.rawrec.app.container.Rvsp.INDEX_FOOTER_BYTES) return null
+        raf.seek(indexOffset)
+        val trailerBytes = ByteArray(remaining)
+        raf.readFully(trailerBytes)
+        val entries = dev.rawrec.app.container.RvspIndex.parseTrailer(trailerBytes) ?: return null
+
+        val frames = mutableListOf<FrameRec>()
+        val audio = mutableListOf<AudioRec>()
+        for (e in entries) {
+            if (e.streamType == 0.toByte()) {
+                frames += FrameRec(e.fileOffset, e.payloadBytes, e.exposureNs, e.timestampNs, e.iso)
+            } else if (e.streamType == 1.toByte()) {
+                audio += AudioRec(e.fileOffset, e.payloadBytes, e.timestampNs)
+            }
+        }
+        if (frames.size > 1) frames.sortBy { it.tsNs }
+        if (audio.size > 1) audio.sortBy { it.timestampNs }
+        return frames to audio
+    }
 
     fun readPayload(raf: RandomAccessFile, off: Long, size: Int): ByteArray {
         raf.seek(off + 32)
