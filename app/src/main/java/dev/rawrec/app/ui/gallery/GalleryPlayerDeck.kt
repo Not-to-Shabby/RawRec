@@ -191,7 +191,11 @@ fun GalleryPlayerDeck(
                         audioRecords = scannedAudio
                         sharedRaf = raf
                         selectedProfile = initialProfile
-                        val player = RvspAudioPlayer(file, audioRecords)
+                        val isFloat = h.audioCodec.startsWith("FLOAT32") ||
+                                      meta["audioFormat"]?.equals("float32", ignoreCase = true) == true ||
+                                      meta["audioBitDepth"] == "32" ||
+                                      scannedAudio.any { it.isFloat }
+                        val player = RvspAudioPlayer(file, scannedAudio, isFloatAudio = isFloat)
                         audioPlayer = player
                         isLoaded = true
                     }
@@ -580,7 +584,7 @@ fun GalleryPlayerDeck(
                                     modifier = Modifier.size(13.dp)
                                 )
                                 Text(
-                                    text = if (isMp4) "AUDIO STREAM" else if (audioRecords.isNotEmpty()) "48kHz PCM" else "NO AUDIO",
+                                    text = if (isMp4) "AUDIO STREAM" else if (audioRecords.isNotEmpty()) (if (header?.audioCodec?.startsWith("FLOAT32") == true) "48kHz 32b FLOAT" else "48kHz PCM") else "NO AUDIO",
                                     style = DeckLabelStyle,
                                     color = if (isMp4 || audioRecords.isNotEmpty()) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.outline
                                 )

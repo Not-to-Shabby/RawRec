@@ -17,10 +17,12 @@ import java.util.concurrent.atomic.AtomicLong
  */
 class RvspAudioPlayer(
     private val file: File,
-    private val audioRecords: List<Rvtool.AudioRec>
+    private val audioRecords: List<Rvtool.AudioRec>,
+    private val isFloatAudio: Boolean = false
 ) {
 
     private var audioTrack: AudioTrack? = null
+    private var nativeFloatOutput = false
     private var playbackThread: Thread? = null
     private val isPlaying = AtomicBoolean(false)
     private val isReleased = AtomicBoolean(false)
@@ -44,12 +46,20 @@ class RvspAudioPlayer(
 
     private fun initAudioTrack() {
         runCatching {
-            val minBuf = AudioTrack.getMinBufferSize(
+            val targetEncoding = if (isFloatAudio) AudioFormat.ENCODING_PCM_FLOAT else AudioFormat.ENCODING_PCM_16BIT
+            val bytesPerSample = if (targetEncoding == AudioFormat.ENCODING_PCM_FLOAT) 4 else 2
+            var minBuf = AudioTrack.getMinBufferSize(
                 48000,
                 AudioFormat.CHANNEL_OUT_STEREO,
-                AudioFormat.ENCODING_PCM_16BIT
+                targetEncoding
             )
-            val bufferSize = maxOf(minBuf, 48000 * 4 / 2) // 500ms internal hardware buffer
+            var actualEncoding = targetEncoding
+            if (minBuf <= 0 && isFloatAudio) {
+                // Fall back to 16-bit PCM if hardware output does not support float
+                actualEncoding = AudioFormat.ENCODING_PCM_16BIT
+                minBuf = AudioTrack.getMinBufferSize(48000, AudioFormat.CHANNEL_OUT_STEREO, actualEncoding)
+            }
+            val bufferSize = maxOf(minBuf, 48000 * 2 * bytesPerSample / 2) // 500ms internal hardware buffer
 
             val track = AudioTrack.Builder()
                 .setAudioAttributes(
@@ -60,7 +70,7 @@ class RvspAudioPlayer(
                 )
                 .setAudioFormat(
                     AudioFormat.Builder()
-                        .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+                        .setEncoding(actualEncoding)
                         .setSampleRate(48000)
                         .setChannelMask(AudioFormat.CHANNEL_OUT_STEREO)
                         .build()
@@ -69,6 +79,7 @@ class RvspAudioPlayer(
                 .setTransferMode(AudioTrack.MODE_STREAM)
                 .build()
 
+            nativeFloatOutput = (actualEncoding == AudioFormat.ENCODING_PCM_FLOAT)
             track.setVolume(if (isMuted) 0f else volume)
             audioTrack = track
         }
@@ -194,7 +205,30 @@ class RvspAudioPlayer(
                 if (currentIdx < audioRecords.size) {
                     val rec = audioRecords[currentIdx]
                     val pcmBytes = Rvtool.readPayload(raf, rec.offset, rec.size)
-                    audioTrack?.write(pcmBytes, 0, pcmBytes.size)
+                    val track = audioTrack
+                    if (track != null) {
+                        if (isFloatAudio) {
+                            val floatCount = pcmBytes.size / 4
+                            val floatBuf = FloatArray(floatCount)
+                            val bb = java.nio.ByteBuffer.wrap(pcmBytes).order(java.nio.ByteOrder.LITTLE_ENDIAN)
+                            for (i in 0 until floatCount) {
+                                floatBuf[i] = bb.float
+                            }
+                            if (nativeFloatOutput) {
+                                track.write(floatBuf, 0, floatCount, AudioTrack.WRITE_BLOCKING)
+                            } else {
+                                // Clean software scaling from 32-bit float to 16-bit signed PCM
+                                val pcm16 = ShortArray(floatCount)
+                                for (i in 0 until floatCount) {
+                                    pcm16[i] = (floatBuf[i].coerceIn(-1f, 1f) * 32767f).toInt().toShort()
+                                }
+                                track.write(pcm16, 0, floatCount, AudioTrack.WRITE_BLOCKING)
+                            }
+                        } else {
+                            // Standard 16-bit signed integer linear PCM
+                            track.write(pcmBytes, 0, pcmBytes.size)
+                        }
+                    }
                     currentIdx++
                 } else {
                     Thread.sleep(10)
