@@ -71,6 +71,8 @@ class AppPreferencesTest {
         assertTrue(prefs.useZstd)
         assertTrue(prefs.packMipi)
         assertFalse(prefs.micOn)
+        assertFalse(prefs.audioFloat32)
+        assertTrue(prefs.frontMirror)
         assertFalse(prefs.proxyOn)
         assertEquals(OrientationMode.CINEMA_LANDSCAPE, prefs.orientationMode)
         assertEquals(0f, prefs.fillFraction, 0.001f)

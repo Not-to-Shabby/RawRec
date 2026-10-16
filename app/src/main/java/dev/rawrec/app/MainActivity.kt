@@ -146,6 +146,7 @@ fun RawRecApp() {
     var recUseZstd by remember { mutableStateOf(prefs.useZstd) }
     var recPackMipi by remember { mutableStateOf(prefs.packMipi) }
     var recMicOn by remember { mutableStateOf(prefs.micOn) }
+    var recAudioFloat by remember { mutableStateOf(prefs.audioFloat32) }
     var recProxyOn by remember { mutableStateOf(prefs.proxyOn) }
     var recCacheOpt by remember { mutableStateOf(prefs.cacheOptimization) }
     var previewSurface by remember { mutableStateOf<android.view.Surface?>(null) }
@@ -365,6 +366,7 @@ fun RawRecApp() {
                                             useZstd = recUseZstd,
                                             packMipi10 = recPackMipi,
                                             mic = recMicOn,
+                                            audioFloat = recAudioFloat,
                                             proxy = recProxyOn,
                                             previewSurface = previewSurface,
                                             controls = cameraControls,
@@ -390,6 +392,7 @@ fun RawRecApp() {
                                             useZstd = recUseZstd,
                                             packMipi10 = recPackMipi,
                                             mic = recMicOn,
+                                            audioFloat = recAudioFloat,
                                             proxy = recProxyOn,
                                             previewSurface = previewSurface,
                                             controls = cameraControls,
@@ -531,6 +534,11 @@ fun RawRecApp() {
                             frontMirror = on
                             prefs.frontMirror = on
                         }
+                        "set_audio_float" -> {
+                            val on = intent.getIntExtra("val", 1) != 0
+                            recAudioFloat = on
+                            prefs.audioFloat32 = on
+                        }
                         "set_mic" -> {
                             val on = intent.getIntExtra("val", 1) != 0
                             recMicOn = on
@@ -609,12 +617,17 @@ fun RawRecApp() {
                 vfBackend = vfBackend,
                 activeLut = activeLut,
                 micEnabled = recMicOn,
+                audioFloat = recAudioFloat,
                 useZstd = recUseZstd,
                 freeStorageBytes = freeStorageBytes,
                 mirrorFront = frontMirror,
                 onMirrorFrontChange = {
                     frontMirror = it
                     prefs.frontMirror = it
+                },
+                onToggleMic = {
+                    recMicOn = !recMicOn
+                    prefs.micOn = recMicOn
                 },
                 rawAspect = recSizeSel?.let { it.width.toDouble() / it.height } ?: (4.0 / 3.0),
                 selectedRawSize = recSizeSel,
@@ -667,6 +680,7 @@ fun RawRecApp() {
                                     useZstd = recUseZstd,
                                     packMipi10 = recPackMipi,
                                     mic = recMicOn,
+                                    audioFloat = recAudioFloat,
                                     proxy = recProxyOn,
                                     previewSurface = previewSurface,
                                     controls = cameraControls,
@@ -744,12 +758,17 @@ fun RawRecApp() {
                             recUseZstd = recUseZstd,
                             recPackMipi = recPackMipi,
                             recMicOn = recMicOn,
+                            recAudioFloat = recAudioFloat,
                             recProxyOn = recProxyOn,
                             onRecordConfigChange = { zstd, pack, mic, proxy ->
                                 recUseZstd = zstd; recPackMipi = pack
                                 recMicOn = mic; recProxyOn = proxy
                                 prefs.useZstd = zstd; prefs.packMipi = pack
                                 prefs.micOn = mic; prefs.proxyOn = proxy
+                            },
+                            onAudioFloatChange = {
+                                recAudioFloat = it
+                                prefs.audioFloat32 = it
                             },
                             recCacheOpt = recCacheOpt,
                             onCacheOptChange = {
@@ -980,9 +999,11 @@ private fun SettingsScreen(
     recUseZstd: Boolean = true,
     recPackMipi: Boolean = true,
     recMicOn: Boolean = false,
+    recAudioFloat: Boolean = false,
     recProxyOn: Boolean = false,
     recCacheOpt: Boolean = true,
     onRecordConfigChange: (Boolean, Boolean, Boolean, Boolean) -> Unit = {_,_,_,_ ->},
+    onAudioFloatChange: (Boolean) -> Unit = {},
     onCacheOptChange: (Boolean) -> Unit = {},
     recCamSel: CamInfo? = null,
     recSizeSel: Size? = null,
@@ -1158,6 +1179,19 @@ private fun SettingsScreen(
                     SettingSwitch("Microphone", recMicOn, !stats.active) {
                         onRecordConfigChange(recUseZstd, recPackMipi, it, recProxyOn)
                     }
+                    SettingSwitch(
+                        "32-Bit Float Audio",
+                        recAudioFloat,
+                        !stats.active && recMicOn
+                    ) { onAudioFloatChange(it) }
+                    Text(
+                        if (recAudioFloat)
+                            "32-Bit Float Audio enabled: unclipped IEEE 754 float recording (1528 dB dynamic range)."
+                        else
+                            "Standard 16-bit integer linear PCM audio.",
+                        style = dev.rawrec.app.ui.theme.TelemetryStyle,
+                        color = MaterialTheme.colorScheme.primary
+                    )
                     SettingSwitch(
                         "Proxy video",
                         recProxyOn,

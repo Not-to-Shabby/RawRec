@@ -154,6 +154,33 @@ class RvspRoundTripTest {
     }
 
     @Test
+    fun `per-record CRC32 verification detects bitflip corruption`() {
+        val headerWithCrc = testHeader().copy(flags = Rvsp.FLAG_HAS_RECORD_CRC)
+        val payload = ByteArray(500) { (it % 120).toByte() }
+        val out = ByteArrayOutputStream()
+        RvspWriter(out, headerWithCrc).use { w ->
+            w.writeFrame(payload, 1_000_000_000L, 8_000_000L, 100)
+        }
+        val bytes = out.toByteArray()
+
+        // 1. Valid file passes CRC verification
+        val validReader = RvspReader(ByteArrayInputStream(bytes), verifyCrc = true)
+        val validRecords = validReader.readAll()
+        assertEquals(1, validRecords.size)
+        assertFalse(validReader.corruptTail)
+
+        // 2. Poison one payload byte (simulating flash bitflip)
+        val poisoned = bytes.copyOf()
+        val payloadOffset = Rvsp.HEADER_SIZE + Rvsp.RECORD_HEADER_BYTES + 10
+        poisoned[payloadOffset] = (poisoned[payloadOffset] + 1).toByte()
+
+        val corruptedReader = RvspReader(ByteArrayInputStream(poisoned), verifyCrc = true)
+        val corruptedRecords = corruptedReader.readAll()
+        assertEquals(0, corruptedRecords.size) // Record rejected due to CRC mismatch
+        assertTrue(corruptedReader.corruptTail)
+    }
+
+    @Test
     fun `empty writer produces parseable empty file`() {
         val out = ByteArrayOutputStream()
         RvspWriter(out, testHeader()).close()

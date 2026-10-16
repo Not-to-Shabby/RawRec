@@ -14,6 +14,7 @@ object Rvsp {
     const val VERSION_MINOR = 1
 
     const val FLAG_HAS_INDEX = 1
+    const val FLAG_HAS_RECORD_CRC = 2
 
     const val RECORD_HEADER_BYTES = 32
     const val MAX_RECORD_PAYLOAD = 256 * 1024 * 1024
@@ -30,6 +31,11 @@ object Rvsp {
     const val AUDIO_NONE = "NONE"
     const val AUDIO_PCM16 = "PCM16"
     const val AUDIO_PCM24 = "PCM24"
+    const val AUDIO_FLOAT32 = "FLOAT32"
+
+    const val AUDIO_FMT_PCM16 = 0
+    const val AUDIO_FMT_PCM24 = 1
+    const val AUDIO_FMT_FLOAT32 = 2
 
     const val PACKING_EXPANDED_LSB = 0
     const val PACKING_MIPI_PACKED = 1
@@ -200,13 +206,19 @@ sealed class RvspRecord {
         override val sequence: Long,
         override val payload: ByteArray,
         val exposureNs: Long,
-        val iso: Int
+        val iso: Int,
+        val crc32: Long = 0L
     ) : RvspRecord()
 
     data class Audio(
         override val timestampNs: Long,
         override val sequence: Long,
-        override val payload: ByteArray
+        override val payload: ByteArray,
+        val sampleRate: Int = 48000,
+        val trackId: Int = 0,
+        val channelCount: Int = 2,
+        val audioFormat: Int = Rvsp.AUDIO_FMT_PCM16,
+        val crc32: Long = 0L
     ) : RvspRecord()
 }
 

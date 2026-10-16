@@ -58,6 +58,54 @@ class RvtoolTest {
     }
 
     @Test
+    fun `wav extracts valid 32-bit IEEE float WAV file when float32 audio is recorded`() {
+        val testRvsp = tempFolder.newFile("test_float_audio.rvsp")
+        val header = dev.rawrec.app.container.RvspHeader(
+            width = 1920,
+            height = 1080,
+            bitDepth = 10,
+            cfaPattern = dev.rawrec.app.container.Rvsp.CFA_BGGR,
+            packing = dev.rawrec.app.container.Rvsp.PACKING_MIPI_PACKED,
+            audioCodec = dev.rawrec.app.container.Rvsp.AUDIO_FLOAT32,
+            createdUnixUs = 1700000000000L,
+            flags = dev.rawrec.app.container.Rvsp.FLAG_HAS_RECORD_CRC,
+            metaJson = """{"audioFormat":"float32","audioSampleRate":48000,"audioChannels":2,"audioBitDepth":32}"""
+        )
+        val floatSamples = FloatArray(1024) { (it % 100) / 100f - 0.5f }
+        val byteBuf = java.nio.ByteBuffer.allocate(floatSamples.size * 4).order(java.nio.ByteOrder.LITTLE_ENDIAN)
+        floatSamples.forEach { byteBuf.putFloat(it) }
+        val floatBytes = byteBuf.array()
+
+        dev.rawrec.app.container.RvspWriter(java.io.FileOutputStream(testRvsp), header).use { w ->
+            w.writeFrame(ByteArray(100), 1_000_000_000L)
+            w.writeAudioChunk(
+                payload = floatBytes,
+                timestampNs = 1_000_000_000L,
+                sampleRate = 48000,
+                trackId = 0,
+                channelCount = 2,
+                audioFormat = dev.rawrec.app.container.Rvsp.AUDIO_FMT_FLOAT32
+            )
+        }
+
+        val testWav = tempFolder.newFile("extracted_float.wav")
+        Rvtool.main(arrayOf("wav", testRvsp.absolutePath, testWav.absolutePath))
+
+        assertTrue("Extracted float WAV file should exist", testWav.exists())
+        val wavBytes = testWav.readBytes()
+        val buf = ByteBuffer.wrap(wavBytes).order(ByteOrder.LITTLE_ENDIAN)
+        val audioFormat = buf.getShort(20).toInt()
+        val numChannels = buf.getShort(22).toInt()
+        val sampleRate = buf.getInt(24)
+        val bitsPerSample = buf.getShort(34).toInt()
+
+        assertEquals(3, audioFormat) // 3 = WAVE_FORMAT_IEEE_FLOAT
+        assertEquals(2, numChannels)
+        assertEquals(48000, sampleRate)
+        assertEquals(32, bitsPerSample)
+    }
+
+    @Test
     fun `extract generates valid CinemaDNG sequence and dngCheck passes`() {
         val testRvsp = tempFolder.newFile("test_dng.rvsp")
         Rvtool.main(arrayOf("gen", testRvsp.absolutePath))

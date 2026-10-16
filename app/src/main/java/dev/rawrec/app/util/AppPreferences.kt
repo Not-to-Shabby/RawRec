@@ -60,6 +60,10 @@ class AppPreferences(
         get() = prefs.getBoolean("pref_mic_on", false)
         set(value) = prefs.edit().putBoolean("pref_mic_on", value).apply()
 
+    var audioFloat32: Boolean
+        get() = prefs.getBoolean("pref_audio_float32", false)
+        set(value) = prefs.edit().putBoolean("pref_audio_float32", value).apply()
+
     var proxyOn: Boolean
         get() = prefs.getBoolean("pref_proxy_on", false)
         set(value) = prefs.edit().putBoolean("pref_proxy_on", value).apply()

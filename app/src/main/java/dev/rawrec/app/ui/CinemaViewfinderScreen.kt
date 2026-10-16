@@ -55,10 +55,12 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.Alignment
@@ -85,6 +87,7 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import kotlin.math.roundToInt
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.height
@@ -149,10 +152,12 @@ fun CinemaViewfinderScreen(
     vfBackend: dev.rawrec.app.util.AppPreferences.ViewfinderBackend = dev.rawrec.app.util.AppPreferences.ViewfinderBackend.TEXTURE_VIEW,
     activeLut: dev.rawrec.tool.CubeLut? = null,
     micEnabled: Boolean = false,
+    audioFloat: Boolean = false,
     useZstd: Boolean = true,
     freeStorageBytes: Long = 0L,
     mirrorFront: Boolean = true,
     onMirrorFrontChange: ((Boolean) -> Unit)? = null,
+    onToggleMic: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -196,9 +201,10 @@ fun CinemaViewfinderScreen(
     }
 
     // Standby Stereo Audio Peak Monitor (dBFS) when mic is enabled and not recording
-    var standbyAudioLeftDb by remember { mutableStateOf(-60f) }
-    var standbyAudioRightDb by remember { mutableStateOf(-60f) }
-    DisposableEffect(micEnabled, stats.active) {
+    var standbyAudioLeftDb by remember { mutableFloatStateOf(-60f) }
+    var standbyAudioRightDb by remember { mutableFloatStateOf(-60f) }
+    val audioMonitorScope = rememberCoroutineScope()
+    DisposableEffect(micEnabled, stats.active, audioFloat) {
         var monitorRec: dev.rawrec.app.audio.AudioRecorder? = null
         if (micEnabled && !stats.active) {
             val hasPerm = androidx.core.content.ContextCompat.checkSelfPermission(
@@ -206,13 +212,20 @@ fun CinemaViewfinderScreen(
             ) == android.content.pm.PackageManager.PERMISSION_GRANTED
             if (hasPerm) {
                 runCatching {
-                    val rec = dev.rawrec.app.audio.AudioRecorder(sampleRate = 48_000, channels = 2) { pcm, _ ->
-                        val peaks = dev.rawrec.app.audio.AudioRecorder.computeStereoPeakDb(pcm)
-                        standbyAudioLeftDb = peaks[0]
-                        standbyAudioRightDb = peaks[1]
+                    val encoding = if (audioFloat) android.media.AudioFormat.ENCODING_PCM_FLOAT else android.media.AudioFormat.ENCODING_PCM_16BIT
+                    val isTargetFloat = encoding == android.media.AudioFormat.ENCODING_PCM_FLOAT
+                    val rec = dev.rawrec.app.audio.AudioRecorder(sampleRate = 48_000, channels = 2, audioEncoding = encoding) { pcm, _ ->
+                        val peaks = dev.rawrec.app.audio.AudioRecorder.computeStereoPeakDb(pcm, isFloat = isTargetFloat)
+                        audioMonitorScope.launch(kotlinx.coroutines.Dispatchers.Main) {
+                            standbyAudioLeftDb = peaks[0]
+                            standbyAudioRightDb = peaks[1]
+                        }
                     }
                     rec.start()
                     monitorRec = rec
+                    dev.rawrec.app.util.AppLog.i("CinemaViewfinder", "standby audio monitor started: encoding=$encoding")
+                }.onFailure {
+                    dev.rawrec.app.util.AppLog.e("CinemaViewfinder", "standby audio monitor failed: ${it.message}", it)
                 }
             }
         } else if (!micEnabled) {
@@ -775,7 +788,8 @@ fun CinemaViewfinderScreen(
                         StereoAudioVuMeter(
                             enabled = micEnabled,
                             leftDb = effectiveAudioLeftDb,
-                            rightDb = effectiveAudioRightDb
+                            rightDb = effectiveAudioRightDb,
+                            onToggleMic = onToggleMic
                         )
                         Text(
                             text = storageBadgeText,
@@ -888,7 +902,8 @@ fun CinemaViewfinderScreen(
                         StereoAudioVuMeter(
                             enabled = micEnabled,
                             leftDb = effectiveAudioLeftDb,
-                            rightDb = effectiveAudioRightDb
+                            rightDb = effectiveAudioRightDb,
+                            onToggleMic = onToggleMic
                         )
 
                         // 2. Remaining Storage & Estimated Recording Time
@@ -1485,17 +1500,38 @@ private fun StereoAudioVuMeter(
     enabled: Boolean,
     leftDb: Float,
     rightDb: Float,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onToggleMic: (() -> Unit)? = null
 ) {
     val primaryColor = MaterialTheme.colorScheme.primary
     val warnColor = MaterialTheme.colorScheme.tertiary
     val clipColor = MaterialTheme.colorScheme.error
-    val dimTrackColor = MaterialTheme.colorScheme.surfaceContainerHighest
+    val dimTrackColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f)
+
+    // Ballistic PPM visual release: instant rise, smooth 300ms decay so human eye can track levels
+    val animLeftDb by animateFloatAsState(
+        targetValue = leftDb,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioNoBouncy,
+            stiffness = if (leftDb > -58f) Spring.StiffnessMedium else Spring.StiffnessLow
+        ),
+        label = "vuLeft"
+    )
+    val animRightDb by animateFloatAsState(
+        targetValue = rightDb,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioNoBouncy,
+            stiffness = if (rightDb > -58f) Spring.StiffnessMedium else Spring.StiffnessLow
+        ),
+        label = "vuRight"
+    )
 
     Surface(
+        onClick = onToggleMic ?: {},
+        enabled = onToggleMic != null,
         shape = CircleShape,
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        border = BorderStroke(1.dp, if (enabled) MaterialTheme.colorScheme.primary.copy(alpha = 0.6f) else MaterialTheme.colorScheme.outlineVariant),
         modifier = modifier
     ) {
         Row(
@@ -1505,47 +1541,77 @@ private fun StereoAudioVuMeter(
         ) {
             Icon(
                 imageVector = if (enabled) RawRecIcons.Mic else RawRecIcons.VolumeMute,
-                contentDescription = "Audio Meter",
+                contentDescription = "Audio Meter (Tap to toggle)",
                 tint = if (enabled) primaryColor else MaterialTheme.colorScheme.outline,
-                modifier = Modifier.size(11.dp)
+                modifier = Modifier.size(12.dp)
             )
             if (enabled) {
-                Canvas(modifier = Modifier.size(width = 48.dp, height = 12.dp)) {
-                    val segments = 10
-                    val gap = 1.5f
-                    val segW = (size.width - gap * (segments - 1)) / segments
-                    val barH = (size.height - 2f) / 2f
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(2.dp)
+                ) {
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(2.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text("L", style = DeckLabelStyle.copy(fontSize = 6.sp), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("R", style = DeckLabelStyle.copy(fontSize = 6.sp), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Canvas(modifier = Modifier.size(width = 52.dp, height = 13.dp)) {
+                        val segments = 10
+                        val gap = 1.5f
+                        val segW = (size.width - gap * (segments - 1)) / segments
+                        val barH = (size.height - 2.5f) / 2f
 
-                    val normL = ((leftDb.coerceIn(-60f, 0f) + 60f) / 60f)
-                    val normR = ((rightDb.coerceIn(-60f, 0f) + 60f) / 60f)
+                        val normL = ((animLeftDb.coerceIn(-60f, 0f) + 60f) / 60f)
+                        val normR = ((animRightDb.coerceIn(-60f, 0f) + 60f) / 60f)
 
-                    for (s in 0 until segments) {
-                        val thresh = (s + 1).toFloat() / segments
-                        val segColor = when {
-                            s >= 9 -> clipColor
-                            s >= 7 -> warnColor
-                            else -> primaryColor
+                        for (s in 0 until segments) {
+                            val thresh = (s + 1).toFloat() / segments
+                            val segColor = when {
+                                s >= 9 -> clipColor
+                                s >= 7 -> warnColor
+                                else -> primaryColor
+                            }
+                            val x = s * (segW + gap)
+                            // Unlit background slot
+                            drawRect(
+                                color = dimTrackColor,
+                                topLeft = Offset(x, 0f),
+                                size = Size(segW, barH)
+                            )
+                            drawRect(
+                                color = dimTrackColor,
+                                topLeft = Offset(x, barH + 2.5f),
+                                size = Size(segW, barH)
+                            )
+                            // Active illuminated LED segment
+                            if (normL >= thresh) {
+                                drawRect(
+                                    color = segColor,
+                                    topLeft = Offset(x, 0f),
+                                    size = Size(segW, barH)
+                                )
+                            }
+                            if (normR >= thresh) {
+                                drawRect(
+                                    color = segColor,
+                                    topLeft = Offset(x, barH + 2.5f),
+                                    size = Size(segW, barH)
+                                )
+                            }
                         }
-                        val x = s * (segW + gap)
-                        drawRect(
-                            color = if (normL >= thresh) segColor else dimTrackColor,
-                            topLeft = Offset(x, 0f),
-                            size = Size(segW, barH)
-                        )
-                        drawRect(
-                            color = if (normR >= thresh) segColor else dimTrackColor,
-                            topLeft = Offset(x, barH + 2f),
-                            size = Size(segW, barH)
-                        )
                     }
                 }
-                val peakDb = maxOf(leftDb, rightDb).toInt()
+                val peakDb = maxOf(animLeftDb, animRightDb).toInt()
                 Text(
-                    text = if (peakDb <= -59) "-∞dB" else "${peakDb}dB",
+                    text = if (peakDb <= -58) "-∞dB" else "${peakDb}dB",
                     style = DeckLabelStyle.copy(fontSize = 8.sp),
+                    fontWeight = FontWeight.Bold,
                     color = when {
                         peakDb >= -3 -> clipColor
                         peakDb >= -12 -> warnColor
+                        peakDb > -58 -> primaryColor
                         else -> MaterialTheme.colorScheme.onSurfaceVariant
                     }
                 )

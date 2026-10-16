@@ -5,7 +5,7 @@ import java.io.IOException
 import java.io.InputStream
 import java.nio.ByteBuffer
 
-class RvspReader(input: InputStream) {
+class RvspReader(input: InputStream, private val verifyCrc: Boolean = false) {
 
     val header: RvspHeader
     var truncated: Boolean = false
@@ -59,20 +59,41 @@ class RvspReader(input: InputStream) {
         if (magic.contentEquals(Rvsp.FRAME_MAGIC) || magic.contentEquals(Rvsp.AUDIO_MAGIC)) {
             val meta = readRecordMeta() ?: return null
             val payload = readPayload(meta.payloadBytes) ?: return null
+            if (verifyCrc && meta.crc32 != 0L) {
+                val c = java.util.zip.CRC32()
+                c.update(payload)
+                if (c.value != meta.crc32) {
+                    corruptTail = true
+                    return null
+                }
+            }
             recordsRead++
+            val hasCrc = (header.flags and Rvsp.FLAG_HAS_RECORD_CRC) != 0
             return when {
                 magic.contentEquals(RsvpFrameTag) -> RvspRecord.Video(
                     timestampNs = meta.timestampNs,
                     sequence = meta.sequence.toLong() and 0xFFFFFFFFL,
                     payload = payload,
                     exposureNs = meta.extraLong,
-                    iso = meta.extraInt
+                    iso = if (hasCrc) (meta.extraInt and 0xFFFF) else meta.extraInt,
+                    crc32 = meta.crc32
                 )
-                else -> RvspRecord.Audio(
-                    timestampNs = meta.timestampNs,
-                    sequence = meta.sequence.toLong() and 0xFFFFFFFFL,
-                    payload = payload
-                )
+                else -> {
+                    val sr = if (hasCrc) meta.extraLong.toInt() else 48000
+                    val tId = if (hasCrc) (meta.extraInt and 0xFF) else 0
+                    val ch = if (hasCrc) ((meta.extraInt ushr 8) and 0xFF) else 2
+                    val fmt = if (hasCrc) ((meta.extraInt ushr 16) and 0xFF) else Rvsp.AUDIO_FMT_PCM16
+                    RvspRecord.Audio(
+                        timestampNs = meta.timestampNs,
+                        sequence = meta.sequence.toLong() and 0xFFFFFFFFL,
+                        payload = payload,
+                        sampleRate = sr,
+                        trackId = tId,
+                        channelCount = ch,
+                        audioFormat = fmt,
+                        crc32 = meta.crc32
+                    )
+                }
             }
         }
         corruptTail = true
@@ -84,6 +105,7 @@ class RvspReader(input: InputStream) {
         val timestampNs: Long,
         val extraLong: Long,
         val extraInt: Int,
+        val crc32: Long,
         val sequence: Int
     )
 
@@ -98,12 +120,28 @@ class RvspReader(input: InputStream) {
             corruptTail = true
             return null
         }
+        val timestampNs = buf.long
+        val hasCrc = (header.flags and Rvsp.FLAG_HAS_RECORD_CRC) != 0
+        val extraLong: Long
+        val extraInt: Int
+        val crc32: Long
+        if (hasCrc) {
+            extraLong = buf.int.toLong() and 0xFFFFFFFFL
+            crc32 = buf.int.toLong() and 0xFFFFFFFFL
+            extraInt = buf.int
+        } else {
+            extraLong = buf.long
+            extraInt = buf.int
+            crc32 = 0L
+        }
+        val sequence = buf.int
         return RecordMeta(
             payloadBytes = payloadBytes,
-            timestampNs = buf.long,
-            extraLong = buf.long,
-            extraInt = buf.int,
-            sequence = buf.int
+            timestampNs = timestampNs,
+            extraLong = extraLong,
+            extraInt = extraInt,
+            crc32 = crc32,
+            sequence = sequence
         )
     }
 

@@ -50,9 +50,9 @@ The file begins with an immutable 512-byte header block starting at byte offset 
 | `4` | 2 | `uint16` | `versionMajor` | Format major version number (currently `0`). |
 | `6` | 2 | `uint16` | `versionMinor` | Format minor version number (currently `1`). |
 | `8` | 2 | `uint16` | `headerSize` | Size of binary header in bytes (always `512`). |
-| `10` | 2 | `uint16` | `flags` | Container flags bitfield:<br>• `bit 0`: `hasIndex` (`1` if index trailer exists at `indexOffset`, `0` otherwise). |
+| `10` | 2 | `uint16` | `flags` | Container flags bitfield:<br>• `bit 0`: `hasIndex` (`1` if index trailer exists at `indexOffset`, `0` otherwise).<br>• `bit 1`: `hasRecordCrc` (`1` if records store 32-bit payload CRC32 at offset 20). |
 | `12` | 16 | `char[16]` | `videoCodec` | Video payload compression codec (NUL-terminated ASCII):<br>• `"STORE\0"`: Uncompressed packed raw Bayer samples.<br>• `"ZSTD\0"`: Zstandard compressed frame payloads.<br>• `"LZ4\0"`: LZ4 compressed frame payloads. |
-| `28` | 8 | `char[8]` | `audioCodec` | Audio payload format (NUL-terminated ASCII):<br>• `"NONE\0"`: No audio tracks embedded.<br>• `"PCM16\0"`: 16-bit signed little-endian PCM.<br>• `"PCM24\0"`: 24-bit signed little-endian PCM. |
+| `28` | 8 | `char[8]` | `audioCodec` | Audio payload format (NUL-terminated ASCII):<br>• `"NONE\0"`: No audio tracks embedded.<br>• `"PCM16\0"`: 16-bit signed little-endian PCM.<br>• `"PCM24\0"`: 24-bit signed little-endian PCM.<br>• `"FLOAT32\0"`: IEEE 754 32-bit floating-point audio. |
 | `36` | 4 | `uint32` | `width` | Active sensor frame width in pixels (e.g. `4096`). |
 | `40` | 4 | `uint32` | `height` | Active sensor frame height in pixels (e.g. `3072`). |
 | `44` | 1 | `uint8` | `bitDepth` | Native sensor ADC bit depth (e.g. `10`, `12`, `14`, `16`). |
@@ -125,13 +125,17 @@ Following the `metaJson` block (at byte offset `512 + metaJsonSize`), all video 
 ### 32-Byte Record Header
 | Offset | Size (Bytes) | Data Type | Field Name | Description |
 |---|---|---|---|---|
-| `0` | 4 | `char[4]` | `magic` | Stream record identifier magic:<br>• `"FRM\0"` (`0x46 0x52 0x4D 0x00`): Video Frame.<br>• `"AUD\0"` (`0x41 0x55 0x44 0x00`): Audio PCM Chunk. |
+| `0` | 4 | `char[4]` | `magic` | Stream record identifier magic:<br>• `"FRM\0"` (`0x46 0x52 0x4D 0x00`): Video Frame.<br>• `"AUD\0"` (`0x41 0x55 0x44 0x00`): Audio Chunk. |
 | `4` | 4 | `uint32` | `payloadBytes` | Length of immediate payload in bytes. |
 | `8` | 8 | `uint64` | `timestampNs` | Presentation timestamp in nanoseconds.<br>• Video: Sensor start of exposure.<br>• Audio: Buffer acquisition start. |
-| `16` | 8 | `uint64` | `exposureNs` | Video exposure duration in nanoseconds (0 for audio). |
-| `24` | 4 | `uint32` | `iso` | Sensor ISO sensitivity amplification (0 for audio). |
+| `16` | 4 | `uint32` | `extra1` | • Video: `exposureNs` (0..4.29s in ns).<br>• Audio: `sampleRate` (e.g. `48000`, `96000`). |
+| `20` | 4 | `uint32` | `crc32` | 32-bit CRC32 checksum of immediate `payload` (when `hasRecordCrc` is 1). |
+| `24` | 2 | `uint16` | `extra2A` | • Video: `iso` (0..65535).<br>• Audio: `trackId` (uint8) + `channelCount` (uint8). |
+| `26` | 2 | `uint16` | `extra2B` | • Video: `reserved` (`0x0000`).<br>• Audio: `audioFormat` (uint8: `0`=PCM16, `1`=PCM24, `2`=FLOAT32) + `flags` (uint8). |
 | `28` | 4 | `uint32` | `sequence` | Monotonically increasing sequence number per stream. |
 | `32` | `payloadBytes` | `bytes` | `payload` | Frame or audio payload. |
+
+*(Note: In legacy files without `hasRecordCrc`, offset 16 is 64-bit `exposureNs` and offset 24 is 32-bit `iso`.)*
 
 ---
 

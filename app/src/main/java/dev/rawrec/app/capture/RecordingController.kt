@@ -337,7 +337,8 @@ class RecordingController(private val context: Context) {
             autoExposure = autoExposure
         ),
         uiRotation: Int = 0,
-        physicalCameraId: String? = null
+        physicalCameraId: String? = null,
+        audioFloat: Boolean = false
     ) {
         synchronized(startStopLock) {
             if (isStarting || engine != null || _stats.value.active) {
@@ -605,8 +606,10 @@ class RecordingController(private val context: Context) {
                 } else {
                     { System.nanoTime() }
                 }
-            val rec = AudioRecorder(sampleRate = 48_000, channels = 2, clock = audioClock) { pcm, ts ->
-                val peaks = AudioRecorder.computeStereoPeakDb(pcm)
+            val encoding = if (audioFloat) android.media.AudioFormat.ENCODING_PCM_FLOAT else android.media.AudioFormat.ENCODING_PCM_16BIT
+            val isTargetFloat = encoding == android.media.AudioFormat.ENCODING_PCM_FLOAT
+            val rec = AudioRecorder(sampleRate = 48_000, channels = 2, audioEncoding = encoding, clock = audioClock) { pcm, ts ->
+                val peaks = AudioRecorder.computeStereoPeakDb(pcm, isFloat = isTargetFloat)
                 latestAudioPeakLeftDb = peaks[0]
                 latestAudioPeakRightDb = peaks[1]
                 val q = audioQ ?: return@AudioRecorder
@@ -618,7 +621,8 @@ class RecordingController(private val context: Context) {
             try {
                 rec.start()
                 audio = rec
-                AppLog.i(TAG, "audio recorder started: 48000Hz stereo pcm16")
+                val encLabel = if (rec.activeEncoding == android.media.AudioFormat.ENCODING_PCM_FLOAT) "float32" else "pcm16"
+                AppLog.i(TAG, "audio recorder started: 48000Hz stereo $encLabel")
             } catch (t: Throwable) {
                 AppLog.e(TAG, "audio start failed", t)
                 audioQ = null
@@ -641,7 +645,7 @@ class RecordingController(private val context: Context) {
             dev.rawrec.app.profiles.SocOptimizer.applyThreadPriority(socTuning.threadPriority)
             runWriterLoop(
                 file, outQ, effSize, whiteLevel, cfa, cameraId, startRealtime, codec, packing,
-                audioMeta = if (audio != null) "48000/2/pcm16" else null,
+                audioMeta = if (audio != null) (if (audio?.activeEncoding == android.media.AudioFormat.ENCODING_PCM_FLOAT) "48000/2/float32" else "48000/2/pcm16") else null,
                 blackLevel = blackLevel,
                 colorMatrix = colorMatrix,
                 asShotNeutral = asShotNeutral,
@@ -1265,6 +1269,7 @@ class RecordingController(private val context: Context) {
                 } else -1
 
                 CountingStream(fos).use { counting ->
+                    val audioFormatCode = if (audioMeta?.endsWith("float32") == true) Rvsp.AUDIO_FMT_FLOAT32 else Rvsp.AUDIO_FMT_PCM16
                     val header = RvspHeader(
                         width = size.width,
                         height = size.height,
@@ -1272,6 +1277,7 @@ class RecordingController(private val context: Context) {
                         cfaPattern = cfa,
                         packing = packing,
                         videoCodec = codec.id,
+                        audioCodec = if (audioMeta != null) (if (audioFormatCode == Rvsp.AUDIO_FMT_FLOAT32) Rvsp.AUDIO_FLOAT32 else Rvsp.AUDIO_PCM16) else Rvsp.AUDIO_NONE,
                         whiteLevel = whiteLevel,
                         blackLevel = blackLevel,
                         colorMatrix = colorMatrix,
@@ -1280,6 +1286,7 @@ class RecordingController(private val context: Context) {
                         createdUnixUs = System.currentTimeMillis() * 1000L,
                         cameraModel = android.os.Build.MODEL.take(63),
                         lensId = cameraId.take(31),
+                        flags = Rvsp.FLAG_HAS_RECORD_CRC,
                         metaJson = initialMeta
                     )
                     RvspWriter(counting, header, codec).use { w ->
@@ -1289,7 +1296,7 @@ class RecordingController(private val context: Context) {
                             while (true) {
                                 val a = audioQ?.poll() ?: break
                                 if (firstAudioTs == null) firstAudioTs = a.tsNs
-                                w.writeAudioChunk(a.pcm, a.tsNs)
+                                w.writeAudioChunk(a.pcm, a.tsNs, sampleRate = 48000, trackId = 0, channelCount = 2, audioFormat = audioFormatCode)
                             }
                             val item = outQ.poll(50, TimeUnit.MILLISECONDS)
                             if (item == null) {
@@ -1408,7 +1415,7 @@ class RecordingController(private val context: Context) {
                             val b0 = raf.read() and 0xFF
                             val b1 = raf.read() and 0xFF
                             val curFlags = b0 or (b1 shl 8)
-                            val newFlags = curFlags or Rvsp.FLAG_HAS_INDEX
+                            val newFlags = curFlags or Rvsp.FLAG_HAS_INDEX or Rvsp.FLAG_HAS_RECORD_CRC
                             val flagsBuf = ByteBuffer.allocate(2).order(Rvsp.LE).putShort(newFlags.toShort())
                             raf.seek(10L)
                             raf.write(flagsBuf.array())

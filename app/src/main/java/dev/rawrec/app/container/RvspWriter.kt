@@ -11,7 +11,8 @@ import java.nio.ByteBuffer
 class RvspWriter(
     output: OutputStream,
     private val header: RvspHeader,
-    private val codec: FrameCodec = StoreCodec
+    private val codec: FrameCodec = StoreCodec,
+    private val computeCrc: Boolean = (header.flags and Rvsp.FLAG_HAS_RECORD_CRC) != 0
 ) : Closeable, Flushable {
 
     private val out = BufferedOutputStream(output, WRITE_BUFFER_BYTES)
@@ -34,19 +35,36 @@ class RvspWriter(
     @Synchronized
     fun writeFrame(payload: ByteArray, timestampNs: Long, exposureNs: Long = 0L, iso: Int = 0) {
         val encoded = if (codec.compressed) codec.encode(payload) else payload
-        writeRecord(Rvsp.FRAME_MAGIC, encoded, timestampNs, exposureNs, iso)
-        framesWritten++
+        writeFrameRaw(encoded, timestampNs, exposureNs, iso)
     }
 
     @Synchronized
     fun writeFrameRaw(payload: ByteArray, timestampNs: Long, exposureNs: Long = 0L, iso: Int = 0) {
-        writeRecord(Rvsp.FRAME_MAGIC, payload, timestampNs, exposureNs, iso)
+        val crc = if (computeCrc) {
+            val c = java.util.zip.CRC32()
+            c.update(payload)
+            c.value
+        } else 0L
+        writeRecord(Rvsp.FRAME_MAGIC, payload, timestampNs, exposureNs, iso, crc, streamType = 0)
         framesWritten++
     }
 
     @Synchronized
-    fun writeAudioChunk(payload: ByteArray, timestampNs: Long) {
-        writeRecord(Rvsp.AUDIO_MAGIC, payload, timestampNs, 0L, 0)
+    fun writeAudioChunk(
+        payload: ByteArray,
+        timestampNs: Long,
+        sampleRate: Int = 48000,
+        trackId: Int = 0,
+        channelCount: Int = 2,
+        audioFormat: Int = Rvsp.AUDIO_FMT_PCM16
+    ) {
+        val crc = if (computeCrc) {
+            val c = java.util.zip.CRC32()
+            c.update(payload)
+            c.value
+        } else 0L
+        val extra2 = (trackId and 0xFF) or ((channelCount and 0xFF) shl 8) or ((audioFormat and 0xFF) shl 16)
+        writeRecord(Rvsp.AUDIO_MAGIC, payload, timestampNs, sampleRate.toLong(), extra2, crc, streamType = 1)
         audioChunksWritten++
     }
 
@@ -55,7 +73,9 @@ class RvspWriter(
         payload: ByteArray,
         timestampNs: Long,
         extra1: Long,
-        extra2: Int
+        extra2: Int,
+        crc32: Long = 0L,
+        streamType: Byte = 0
     ) {
         require(payload.size <= Rvsp.MAX_RECORD_PAYLOAD) {
             "record payload too large: ${payload.size}"
@@ -88,9 +108,15 @@ class RvspWriter(
             .put(magic)
             .putInt(payload.size)
             .putLong(timestampNs)
-            .putLong(extra1)
-            .putInt(extra2)
-            .putInt(sequence.toInt())
+        if (computeCrc) {
+            head.putInt(extra1.toInt())
+            head.putInt(crc32.toInt())
+            head.putInt(extra2)
+        } else {
+            head.putLong(extra1)
+            head.putInt(extra2)
+        }
+        head.putInt(sequence.toInt())
         sequence++
         out.write(head.array())
         out.write(payload)

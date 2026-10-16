@@ -198,8 +198,8 @@ object Rvtool {
     }
 
     /** Indexed frame record; tsNs/iso are the per-frame record-header fields. */
-    class FrameRec(val offset: Long, val size: Int, val expNs: Long, val tsNs: Long, val iso: Int)
-    class AudioRec(val offset: Long, val size: Int, val timestampNs: Long)
+    class FrameRec(val offset: Long, val size: Int, val expNs: Long, val tsNs: Long, val iso: Int, val crc32: Long = 0L)
+    class AudioRec(val offset: Long, val size: Int, val timestampNs: Long, val sampleRate: Int = 48000, val trackId: Int = 0, val isFloat: Boolean = false, val crc32: Long = 0L)
 
     fun openHeader(path: String): Pair<Header, RandomAccessFile> {
         val raf = RandomAccessFile(path, "r")
@@ -309,11 +309,12 @@ object Rvtool {
     fun scanRecords(raf: RandomAccessFile): Pair<List<FrameRec>, List<AudioRec>> {
         // 1. Fast-path: Check for valid IDXT Index Trailer (O(1) seek, ~1ms load)
         val head512 = ByteArray(512)
+        var flags = 0
         val origPos = raf.filePointer
         raf.seek(0L)
         if (raf.read(head512) == 512) {
             val buf = ByteBuffer.wrap(head512).order(ByteOrder.LITTLE_ENDIAN)
-            val flags = buf.getShort(10).toInt() and 0xFFFF
+            flags = buf.getShort(10).toInt() and 0xFFFF
             val indexOffset = buf.getLong(224)
             val fileLen = raf.length()
             if ((flags and 1) != 0 && indexOffset > 0L && indexOffset < fileLen) {
@@ -327,6 +328,7 @@ object Rvtool {
         }
 
         // 2. Fallback: Sequential record scan (torn-tail / unindexed crash recovery)
+        val hasCrc = (flags and 2) != 0
         val frames = mutableListOf<FrameRec>()
         val audio = mutableListOf<AudioRec>()
         raf.seek(512L + metaSize(raf))
@@ -342,10 +344,16 @@ object Rvtool {
             val payload = ByteBuffer.wrap(head).order(ByteOrder.LITTLE_ENDIAN).getInt(4)
             if (payload < 0 || payload > 256 shl 20) break
             val tsNs = ByteBuffer.wrap(head).order(ByteOrder.LITTLE_ENDIAN).getLong(8)
-            val expNs = ByteBuffer.wrap(head).order(ByteOrder.LITTLE_ENDIAN).getLong(16)
-            val iso = ByteBuffer.wrap(head).order(ByteOrder.LITTLE_ENDIAN).getInt(24)
-            if (isFrame) frames += FrameRec(off, payload, expNs, tsNs, iso)
-            else if (isAudio) audio += AudioRec(off, payload, tsNs)
+            val expOrSr = ByteBuffer.wrap(head).order(ByteOrder.LITTLE_ENDIAN).getInt(16).toLong() and 0xFFFFFFFFL
+            val crc = ByteBuffer.wrap(head).order(ByteOrder.LITTLE_ENDIAN).getInt(20).toLong() and 0xFFFFFFFFL
+            val e2 = ByteBuffer.wrap(head).order(ByteOrder.LITTLE_ENDIAN).getInt(24)
+            val expNs = if (hasCrc) expOrSr else ByteBuffer.wrap(head).order(ByteOrder.LITTLE_ENDIAN).getLong(16)
+            val iso = if (hasCrc) (e2 and 0xFFFF) else e2
+            val trackId = if (hasCrc) (e2 and 0xFF) else 0
+            val isFloat = if (hasCrc) (((e2 ushr 16) and 0xFF) == 2) else false
+
+            if (isFrame) frames += FrameRec(off, payload, expNs, tsNs, iso, if (hasCrc) crc else 0L)
+            else if (isAudio) audio += AudioRec(off, payload, tsNs, if (hasCrc) expOrSr.toInt() else 48000, trackId, isFloat, if (hasCrc) crc else 0L)
             raf.seek(off + 32L + payload)
         }
         // Multi-threaded compression workers in the capture pipeline write out-of-order
@@ -377,7 +385,8 @@ object Rvtool {
             if (e.streamType == 0.toByte()) {
                 frames += FrameRec(e.fileOffset, e.payloadBytes, e.exposureNs, e.timestampNs, e.iso)
             } else if (e.streamType == 1.toByte()) {
-                audio += AudioRec(e.fileOffset, e.payloadBytes, e.timestampNs)
+                val isFloat = e.exposureNs.toInt() == 2 || (e.iso == 2)
+                audio += AudioRec(e.fileOffset, e.payloadBytes, e.timestampNs, e.exposureNs.toInt().coerceAtLeast(48000), e.iso, isFloat)
             }
         }
         if (frames.size > 1) frames.sortBy { it.tsNs }
@@ -388,6 +397,18 @@ object Rvtool {
     fun readPayload(raf: RandomAccessFile, off: Long, size: Int): ByteArray {
         raf.seek(off + 32)
         return ByteArray(size).also { raf.readFully(it) }
+    }
+
+    fun readPayloadVerified(raf: RandomAccessFile, f: FrameRec): ByteArray {
+        val payload = readPayload(raf, f.offset, f.size)
+        if (f.crc32 != 0L) {
+            val c = java.util.zip.CRC32()
+            c.update(payload)
+            if (c.value != f.crc32) {
+                System.err.println("WARNING: Frame at offset ${f.offset} failed CRC32 verification (expected ${f.crc32}, got ${c.value})")
+            }
+        }
+        return payload
     }
 
     fun readPayload(raf: RandomAccessFile, f: FrameRec): ByteArray =
@@ -1000,9 +1021,14 @@ object Rvtool {
                         else " (unknown base — legacy file, raw offsets unaligned)"
                 )
             }
-            val sampleRate = 48000
-            val channels = 2
-            val bitsPerSample = 16
+            val isFloat = h.audioCodec.startsWith("FLOAT32") ||
+                          meta["audioFormat"]?.equals("float32", ignoreCase = true) == true ||
+                          meta["audioBitDepth"] == "32" ||
+                          audio.any { it.isFloat }
+            val sampleRate = meta["audioSampleRate"]?.toIntOrNull() ?: audio.firstOrNull()?.sampleRate ?: 48000
+            val channels = meta["audioChannels"]?.toIntOrNull() ?: 2
+            val bitsPerSample = if (isFloat) 32 else 16
+            val formatCode = if (isFloat) 3 else 1 // 3 = WAVE_FORMAT_IEEE_FLOAT, 1 = WAVE_FORMAT_PCM
             val totalBytes = audio.sumOf { it.size.toLong() }
             val outFile = File(outPath)
             outFile.parentFile?.mkdirs()
@@ -1017,7 +1043,7 @@ object Rvtool {
                 out.write("WAVE".toByteArray(Charsets.US_ASCII))
                 out.write("fmt ".toByteArray(Charsets.US_ASCII))
                 out.write(tLong(16))
-                out.write(tShort(1))
+                out.write(tShort(formatCode))
                 out.write(tShort(channels))
                 out.write(tLong(sampleRate))
                 out.write(tLong(byteRate))
@@ -1031,8 +1057,9 @@ object Rvtool {
                     out.write(pcm)
                 }
             }
-            val durationSec = totalBytes.toDouble() / (sampleRate * channels * 2)
-            println("extracted ${audio.size} audio chunks ($totalBytes bytes, %.2f s) -> $outPath".format(durationSec))
+            val durationSec = totalBytes.toDouble() / (sampleRate * channels * (bitsPerSample / 8))
+            val typeLabel = if (isFloat) "32-bit float" else "16-bit PCM"
+            println("extracted ${audio.size} audio chunks ($totalBytes bytes, %.2f s, $typeLabel) -> $outPath".format(durationSec))
         }
     }
 
