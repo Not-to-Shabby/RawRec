@@ -83,6 +83,11 @@ class AppPreferences(
         get() = prefs.getBoolean("pref_presentation_stretch", false)
         set(value) = prefs.edit().putBoolean("pref_presentation_stretch", value).apply()
 
+    /** Front camera monitor: true = mirrored selfie view, false = true (as-recorded) view. */
+    var frontMirror: Boolean
+        get() = prefs.getBoolean("pref_front_mirror", true)
+        set(value) = prefs.edit().putBoolean("pref_front_mirror", value).apply()
+
     /** Custom recording destination directory (e.g. external USB-C SSD / storage volume). */
     var customStoragePath: String?
         get() = prefs.getString("pref_custom_storage_path", null)

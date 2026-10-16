@@ -71,5 +71,30 @@ class AudioRecorder(
     companion object {
         private const val CHUNK_BYTES = 16_384
         private const val TimeUnit_MS = 5_000L
+
+        /**
+         * Computes stereo (L, R) peak audio levels in dBFS [-60f .. 0f] from a 16-bit LE PCM chunk.
+         */
+        fun computeStereoPeakDb(pcm: ByteArray, length: Int = pcm.size): FloatArray {
+            var maxL = 0
+            var maxR = 0
+            val limit = (length / 4) * 4
+            var i = 0
+            while (i < limit) {
+                val sL = ((pcm[i + 1].toInt() shl 8) or (pcm[i].toInt() and 0xFF)).toShort().toInt()
+                val sR = ((pcm[i + 3].toInt() shl 8) or (pcm[i + 2].toInt() and 0xFF)).toShort().toInt()
+                val absL = kotlin.math.abs(sL)
+                val absR = kotlin.math.abs(sR)
+                if (absL > maxL) maxL = absL
+                if (absR > maxR) maxR = absR
+                i += 4
+            }
+            fun toDb(peak: Int): Float {
+                if (peak <= 32) return -60f
+                val db = 20.0 * kotlin.math.log10(peak.toDouble() / 32768.0)
+                return db.toFloat().coerceIn(-60f, 0f)
+            }
+            return floatArrayOf(toDb(maxL), toDb(maxR))
+        }
     }
 }

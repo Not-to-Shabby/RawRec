@@ -52,7 +52,9 @@ data class RecStats(
     val elapsedMs: Long = 0,
     val workers: Int = 0,
     val error: String? = null,
-    val thermalStage: String = "NONE"
+    val thermalStage: String = "NONE",
+    val audioPeakLeftDb: Float = -60f,
+    val audioPeakRightDb: Float = -60f
 ) {
     val ratio: Double
         get() = if (rawBytesEstimate > 0) bytesWritten.toDouble() / rawBytesEstimate else 0.0
@@ -116,6 +118,8 @@ class RecordingController(private val context: Context) {
     private var proxyH = 0
 
     @Volatile private var stopping = false
+    @Volatile private var latestAudioPeakLeftDb = -60f
+    @Volatile private var latestAudioPeakRightDb = -60f
     private val droppedInQ = AtomicLong()
     private val droppedMidQ = AtomicLong()
     private val droppedOutQ = AtomicLong()
@@ -587,6 +591,9 @@ class RecordingController(private val context: Context) {
                     { System.nanoTime() }
                 }
             val rec = AudioRecorder(sampleRate = 48_000, channels = 2, clock = audioClock) { pcm, ts ->
+                val peaks = AudioRecorder.computeStereoPeakDb(pcm)
+                latestAudioPeakLeftDb = peaks[0]
+                latestAudioPeakRightDb = peaks[1]
                 val q = audioQ ?: return@AudioRecorder
                 while (!q.offer(AudioChunk(pcm, ts))) { q.poll() }
                 if (proxyActive) {
@@ -1115,7 +1122,9 @@ class RecordingController(private val context: Context) {
                 dropped = totalDropped(),
                 avgFps = avgFpsOf(lastFrameTimestamp),
                 elapsedMs = if (activeStartRealtime > 0) now - activeStartRealtime else s.elapsedMs,
-                thermalStage = activeThermalStage.name
+                thermalStage = activeThermalStage.name,
+                audioPeakLeftDb = latestAudioPeakLeftDb,
+                audioPeakRightDb = latestAudioPeakRightDb
             )
         }
     }

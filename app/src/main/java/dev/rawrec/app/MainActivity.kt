@@ -165,6 +165,7 @@ fun RawRecApp() {
     var vfImmersive by remember { mutableStateOf(prefs.fillFraction >= 0.5f) }
     // Stretch: anamorphic presentation — whole frame fills the screen, no crop (non-square pixels).
     var vfStretch by remember { mutableStateOf(prefs.presentationStretch) }
+    var frontMirror by remember { mutableStateOf(prefs.frontMirror) }
     // Live viewfinder telemetry: sensor, display rotation, applied angle, bufW, bufH
     var vfTelemetry by remember { mutableStateOf("viewfinder: idle") }
     // Live device-orientation debug state
@@ -525,6 +526,16 @@ fun RawRecApp() {
                             recCacheOpt = on
                             prefs.cacheOptimization = on
                         }
+                        "set_front_mirror" -> {
+                            val on = intent.getIntExtra("val", 1) != 0
+                            frontMirror = on
+                            prefs.frontMirror = on
+                        }
+                        "set_mic" -> {
+                            val on = intent.getIntExtra("val", 1) != 0
+                            recMicOn = on
+                            prefs.micOn = on
+                        }
                         "set_camera" -> {
                             val id = intent.getStringExtra("id") ?: intent.getIntExtra("id", 0).toString()
                             val matched = allCams.firstOrNull { it.id == id }
@@ -575,6 +586,9 @@ fun RawRecApp() {
         ((uiRotation - displayRotationDeg + 360) % 360).toFloat()
     }
     val effectiveUiRotation = if (vfOrientationMode == dev.rawrec.app.ui.ViewfinderMath.OrientationMode.CINEMA_LANDSCAPE) 0 else uiRotation
+    val freeStorageBytes = remember(stats.active, settingsOpen) {
+        runCatching { controller.recordingsDir().freeSpace }.getOrDefault(0L)
+    }
     androidx.compose.runtime.CompositionLocalProvider(
         dev.rawrec.app.ui.components.RawRecUi.LocalIconRotation provides relativeUiRotation
     ) {
@@ -594,6 +608,14 @@ fun RawRecApp() {
                 autoDisableVfSeconds = autoDisableVfSeconds,
                 vfBackend = vfBackend,
                 activeLut = activeLut,
+                micEnabled = recMicOn,
+                useZstd = recUseZstd,
+                freeStorageBytes = freeStorageBytes,
+                mirrorFront = frontMirror,
+                onMirrorFrontChange = {
+                    frontMirror = it
+                    prefs.frontMirror = it
+                },
                 rawAspect = recSizeSel?.let { it.width.toDouble() / it.height } ?: (4.0 / 3.0),
                 selectedRawSize = recSizeSel,
                 availableRawSizes = recCamSel?.rawSizes.orEmpty(),
@@ -1092,12 +1114,12 @@ private fun SettingsScreen(
 	                    val sizes = camSel?.rawSizes.orEmpty()
 	                    if (sizes.isNotEmpty()) {
 	                        dev.rawrec.app.ui.components.ChoiceChipGrid(
-	                            options = sizes.map { CameraCatalog.formatShortResolution(it) },
+	                            options = sizes.map { CameraCatalog.formatResolution(it, sizes) },
 	                            selected = { opt ->
-	                                sizeSel?.let { CameraCatalog.formatShortResolution(it) } == opt
+	                                sizeSel?.let { CameraCatalog.formatResolution(it, sizes) } == opt
 	                            },
 	                            onSelect = { label ->
-	                                sizes.firstOrNull { CameraCatalog.formatShortResolution(it) == label }?.let { s ->
+	                                sizes.firstOrNull { CameraCatalog.formatResolution(it, sizes) == label }?.let { s ->
 	                                    onSourceChange(camSel, s)
 	                                }
 	                            }

@@ -351,6 +351,7 @@ fun IconToggle(
     active: Boolean,
     modifier: Modifier = Modifier,
     label: String? = null,
+    compact: Boolean = false,
     onClick: () -> Unit
 ) {
     val haptics = LocalHapticFeedback.current
@@ -387,12 +388,12 @@ fun IconToggle(
         contentColor = if (active) MaterialTheme.colorScheme.onPrimaryContainer
         else MaterialTheme.colorScheme.onSurfaceVariant,
         modifier = modifier
-            .defaultMinSize(minWidth = 46.dp, minHeight = 44.dp)
+            .defaultMinSize(minWidth = if (compact) 40.dp else 46.dp, minHeight = 44.dp)
             .scale(pop.value)
     ) {
         Box(
             contentAlignment = Alignment.Center,
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+            modifier = Modifier.padding(horizontal = if (compact) 3.dp else 8.dp, vertical = 4.dp)
         ) {
             if (label != null) {
                 Column(

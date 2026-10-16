@@ -49,6 +49,7 @@ fun CinemaParameterTile(
     icon: ImageVector? = null,
     highlight: Boolean = false,
     modeBadge: String? = null,
+    detail: String? = null,
     onClick: () -> Unit
 ) {
     val haptics = LocalHapticFeedback.current
@@ -113,8 +114,8 @@ fun CinemaParameterTile(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 10.dp, vertical = 7.dp),
-            verticalArrangement = Arrangement.spacedBy(3.dp),
+                .padding(horizontal = 6.dp, vertical = 6.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
             horizontalAlignment = Alignment.Start
         ) {
             Row(
@@ -135,12 +136,12 @@ fun CinemaParameterTile(
                                 highlight -> MaterialTheme.colorScheme.primary
                                 else -> MaterialTheme.colorScheme.onSurfaceVariant
                             },
-                            modifier = Modifier.size(11.dp).rotateIcon()
+                            modifier = Modifier.size(10.dp).rotateIcon()
                         )
                     }
                     Text(
                         text = label.uppercase(),
-                        style = DeckLabelStyle.copy(letterSpacing = 0.6.sp),
+                        style = DeckLabelStyle.copy(fontSize = 8.sp, letterSpacing = 0.5.sp),
                         color = when {
                             active -> MaterialTheme.colorScheme.primary
                             highlight -> MaterialTheme.colorScheme.primary
@@ -157,29 +158,43 @@ fun CinemaParameterTile(
                     ) {
                         Text(
                             text = modeBadge,
-                            style = DeckLabelStyle.copy(fontSize = 8.sp, letterSpacing = 0.4.sp),
+                            style = DeckLabelStyle.copy(fontSize = 7.sp, letterSpacing = 0.3.sp),
                             fontWeight = FontWeight.Bold,
                             color = if (highlight) MaterialTheme.colorScheme.primary
                             else MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
+                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
                         )
                     }
                 }
             }
             Text(
                 text = value,
-                style = DeckValueStyle,
+                style = DeckValueStyle.copy(fontSize = 12.sp, lineHeight = 16.sp, letterSpacing = 0.sp),
                 color = contentColor,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
+            if (detail != null) {
+                Text(
+                    text = detail,
+                    style = DeckLabelStyle.copy(fontSize = 8.sp, letterSpacing = 0.2.sp),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
         }
     }
 }
 
 /**
- * Compact right-side Material 3 Expressive dock housing a 2x3 matrix of parameter
- * tiles (FPS, Shutter, ISO, WB, Look, Res) and a sculpted master Record Trigger well.
+ * Right-pillarbox Material 3 Expressive dock (188.dp wide — fits strictly inside
+ * the 4:3 right pillarbox margin with zero overlap on the camera image).
+ *
+ * Houses:
+ * - Top Optical Lens Switcher pill (with LensIris aperture icon).
+ * - Compact 2x3 Exposure & Format Matrix (FPS, Shutter, ISO, WB, Look, Gate).
+ * - Isolated Master Record Trigger centered for the right thumb.
  */
 @Composable
 fun CinemaParameterDock(
@@ -189,138 +204,165 @@ fun CinemaParameterDock(
     wbValue: String,
     lookValue: String,
     resValue: String,
+    resDetail: String? = null,
     activeTile: String?,
     autoExposure: Boolean,
     autoWb: Boolean,
     recording: Boolean,
+    lensLabel: String? = null,
+    onLensSwitch: (() -> Unit)? = null,
     onTileClick: (String) -> Unit,
     onRecordToggle: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Surface(
-        color = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.92f),
-        shape = MaterialTheme.shapes.extraLarge,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-        modifier = modifier.width(234.dp)
+    Column(
+        modifier = modifier.width(146.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        Column(
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 10.dp),
-            verticalArrangement = Arrangement.spacedBy(7.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            // Row 1: FPS & Shutter
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(7.dp)
-            ) {
-                CinemaParameterTile(
-                    label = "FPS",
-                    value = fpsValue,
-                    icon = RawRecIcons.Speed,
-                    active = activeTile == "FPS",
-                    modifier = Modifier.weight(1f)
-                ) { onTileClick("FPS") }
-
-                CinemaParameterTile(
-                    label = "Shutter",
-                    value = shutterValue,
-                    icon = RawRecIcons.Shutter,
-                    active = activeTile == "SHUTTER",
-                    highlight = !autoExposure,
-                    modeBadge = if (autoExposure) "A" else "M",
-                    modifier = Modifier.weight(1f)
-                ) { onTileClick("SHUTTER") }
-            }
-
-            // Row 2: ISO & WB
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(7.dp)
-            ) {
-                CinemaParameterTile(
-                    label = "ISO",
-                    value = isoValue,
-                    icon = RawRecIcons.Iso,
-                    active = activeTile == "ISO",
-                    highlight = !autoExposure,
-                    modeBadge = if (autoExposure) "A" else "M",
-                    modifier = Modifier.weight(1f)
-                ) { onTileClick("ISO") }
-
-                CinemaParameterTile(
-                    label = "WB",
-                    value = wbValue,
-                    icon = RawRecIcons.WhiteBalance,
-                    active = activeTile == "WB",
-                    highlight = !autoWb,
-                    modeBadge = if (autoWb) "A" else "M",
-                    modifier = Modifier.weight(1f)
-                ) { onTileClick("WB") }
-            }
-
-            // Row 3: Look / Tone & Resolution
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(7.dp)
-            ) {
-                CinemaParameterTile(
-                    label = "Look",
-                    value = lookValue,
-                    icon = RawRecIcons.Tune,
-                    active = activeTile == "LOOK",
-                    modifier = Modifier.weight(1f)
-                ) { onTileClick("LOOK") }
-
-                CinemaParameterTile(
-                    label = "Res",
-                    value = resValue,
-                    icon = RawRecIcons.Layers,
-                    active = activeTile == "RES",
-                    modifier = Modifier.weight(1f)
-                ) { onTileClick("RES") }
-            }
-
-            HorizontalDivider(
-                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
-                modifier = Modifier.padding(vertical = 2.dp)
-            )
-
-            // Master Cinema Record Trigger Well (M3 Expressive Tonal Dock)
+        // 1. Optical Lens Switcher Pill (Top of Right Pillarbox)
+        if (lensLabel != null && onLensSwitch != null) {
             Surface(
+                onClick = onLensSwitch,
+                enabled = !recording,
                 shape = CircleShape,
-                color = if (recording) MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.45f)
-                else MaterialTheme.colorScheme.surfaceContainerHigh,
-                border = BorderStroke(
-                    1.dp,
-                    if (recording) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.outlineVariant
-                ),
+                color = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.92f),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.6f)),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 14.dp, vertical = 6.dp),
+                        .padding(horizontal = 12.dp, vertical = 6.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Column {
+                    Icon(
+                        imageVector = RawRecIcons.LensIris,
+                        contentDescription = "Switch Lens",
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(15.dp)
+                    )
+                    Surface(
+                        shape = CircleShape,
+                        color = MaterialTheme.colorScheme.primaryContainer
+                    ) {
                         Text(
-                            text = if (recording) "RECORDING" else "READY",
-                            style = DeckLabelStyle,
-                            color = if (recording) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Text(
-                            text = if (recording) "Tap to stop" else "RAW Capture",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            text = lensLabel,
+                            style = DeckLabelStyle.copy(fontSize = 9.sp),
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
                         )
                     }
-                    RecordButtonExpressive(
-                        recording = recording,
-                        onToggle = onRecordToggle
-                    )
                 }
+            }
+        }
+
+        // 2. Compact 2x3 Exposure & Format Parameter Matrix (Fits inside 188dp pillarbox)
+        Surface(
+            color = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.92f),
+            shape = MaterialTheme.shapes.large,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(
+                modifier = Modifier.padding(6.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                // Row 1: FPS & Shutter
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    CinemaParameterTile(
+                        label = "FPS",
+                        value = fpsValue,
+                        icon = RawRecIcons.Speed,
+                        active = activeTile == "FPS",
+                        modifier = Modifier.weight(1f)
+                    ) { onTileClick("FPS") }
+
+                    CinemaParameterTile(
+                        label = "SHUT",
+                        value = shutterValue,
+                        icon = RawRecIcons.Shutter,
+                        active = activeTile == "SHUTTER",
+                        highlight = !autoExposure,
+                        modeBadge = if (autoExposure) "A" else "M",
+                        modifier = Modifier.weight(1f)
+                    ) { onTileClick("SHUTTER") }
+                }
+
+                // Row 2: ISO & WB
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    CinemaParameterTile(
+                        label = "ISO",
+                        value = isoValue,
+                        icon = RawRecIcons.Iso,
+                        active = activeTile == "ISO",
+                        highlight = !autoExposure,
+                        modeBadge = if (autoExposure) "A" else "M",
+                        modifier = Modifier.weight(1f)
+                    ) { onTileClick("ISO") }
+
+                    CinemaParameterTile(
+                        label = "WB",
+                        value = wbValue,
+                        icon = RawRecIcons.WhiteBalance,
+                        active = activeTile == "WB",
+                        highlight = !autoWb,
+                        modeBadge = if (autoWb) "A" else "M",
+                        modifier = Modifier.weight(1f)
+                    ) { onTileClick("WB") }
+                }
+
+                // Row 3: Look & Cinema Gate
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    CinemaParameterTile(
+                        label = "LOOK",
+                        value = lookValue,
+                        icon = RawRecIcons.Tune,
+                        active = activeTile == "LOOK",
+                        modifier = Modifier.weight(1f)
+                    ) { onTileClick("LOOK") }
+
+                    CinemaParameterTile(
+                        label = "GATE",
+                        value = resValue,
+                        detail = resDetail,
+                        icon = RawRecIcons.Layers,
+                        active = activeTile == "RES",
+                        modifier = Modifier.weight(1f)
+                    ) { onTileClick("RES") }
+                }
+            }
+        }
+
+        // 3. Isolated Ergonomic Right-Thumb Record Trigger
+        Surface(
+            shape = CircleShape,
+            color = if (recording) MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.55f)
+            else MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.92f),
+            border = BorderStroke(
+                1.5.dp,
+                if (recording) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.outlineVariant
+            ),
+            modifier = Modifier.size(68.dp)
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                RecordButtonExpressive(
+                    recording = recording,
+                    onToggle = onRecordToggle,
+                    modifier = Modifier.size(54.dp)
+                )
             }
         }
     }
@@ -338,6 +380,7 @@ fun CinemaParameterGrid(
     wbValue: String,
     lookValue: String,
     resValue: String,
+    resDetail: String? = null,
     activeTile: String?,
     autoExposure: Boolean,
     autoWb: Boolean,
@@ -413,8 +456,9 @@ fun CinemaParameterGrid(
                 ) { onTileClick("LOOK") }
 
                 CinemaParameterTile(
-                    label = "Res",
+                    label = "Sensor mode",
                     value = resValue,
+                    detail = resDetail,
                     icon = RawRecIcons.Layers,
                     active = activeTile == "RES",
                     modifier = Modifier.weight(1f)

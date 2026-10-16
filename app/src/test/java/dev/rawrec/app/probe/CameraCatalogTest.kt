@@ -115,6 +115,28 @@ class CameraCatalogTest {
     }
 
     @Test
+    fun `formatCinemaGate uses cinema gate names instead of megapixels`() {
+        assertEquals("4.1K OG", CameraCatalog.formatCinemaGate(4096, 3072, 0))
+        assertEquals("4.1K OG", CameraCatalog.formatCinemaGate(4096, 3072, 3))
+        assertEquals("4.1K 16:9", CameraCatalog.formatCinemaGate(4096, 3072, 2))
+        assertEquals("4.1K 2.39", CameraCatalog.formatCinemaGate(4096, 3072, 1))
+        assertEquals("3.1K 1:1", CameraCatalog.formatCinemaGate(4096, 3072, 4))
+        assertEquals("4.1K 16:9", CameraCatalog.formatCinemaGate(4096, 2304, 0))
+        assertEquals("3.3K OG", CameraCatalog.formatCinemaGate(3280, 2464, 0))
+        assertEquals("2.6K OG", CameraCatalog.formatCinemaGate(2592, 1944, 0))
+        assertEquals("4K UHD", CameraCatalog.formatCinemaGate(3840, 2160, 0))
+        assertEquals("1080p", CameraCatalog.formatCinemaGate(1920, 1080, 0))
+    }
+
+    @Test
+    fun `describeMode keeps pixel dimensions and megapixels next to the gate name`() {
+        val max = 8192L * 6144L
+        assertEquals("4096×3072 · 12.6MP Binned · 4.1K OG", CameraCatalog.describeMode(4096, 3072, max, true))
+        assertEquals("8192×6144 · 50.3MP Full · 8.2K OG", CameraCatalog.describeMode(8192, 6144, max, true))
+        assertEquals("3280×2464 · 8.1MP · 3.3K OG", CameraCatalog.describeMode(3280, 2464))
+    }
+
+    @Test
     fun `CANDIDATE_AUX_IDS contains standard OEM auxiliary camera ports`() {
         val auxList = CameraCatalog.CANDIDATE_AUX_IDS
         assertTrue(auxList.contains("2"))

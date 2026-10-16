@@ -29,6 +29,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -102,11 +103,13 @@ import dev.rawrec.app.ui.components.IconToggle
 import dev.rawrec.app.ui.components.RawRecIcons
 import dev.rawrec.app.ui.components.RecordButtonExpressive
 import dev.rawrec.app.ui.components.CinemaFocusRail
+import dev.rawrec.app.ui.components.CinemaVerticalFocusWheel
 import dev.rawrec.app.ui.components.CinemaParameterDock
 import dev.rawrec.app.ui.components.CinemaParameterGrid
 import dev.rawrec.app.ui.components.rotateIcon
 import dev.rawrec.app.ui.theme.DeckLabelStyle
 import dev.rawrec.app.ui.theme.DeckTimecodeStyle
+import androidx.compose.ui.platform.LocalContext
 
 private enum class ActivePanel {
     NONE, ISO, SHUTTER, WB, FOCUS, FPS, LOOK, RES
@@ -145,38 +148,83 @@ fun CinemaViewfinderScreen(
     onTelemetry: ((Int, Int, Int, Int, Int) -> Unit)? = null,
     vfBackend: dev.rawrec.app.util.AppPreferences.ViewfinderBackend = dev.rawrec.app.util.AppPreferences.ViewfinderBackend.TEXTURE_VIEW,
     activeLut: dev.rawrec.tool.CubeLut? = null,
+    micEnabled: Boolean = false,
+    useZstd: Boolean = true,
+    freeStorageBytes: Long = 0L,
+    mirrorFront: Boolean = true,
+    onMirrorFrontChange: ((Boolean) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
     var activePanel by remember { mutableStateOf(ActivePanel.NONE) }
-    // Manual-controls pills collapsed behind the tune button by default.
     var controlsExpanded by remember { mutableStateOf(false) }
-    // Scope toggles collapsed behind the scopes button by default.
     var scopesExpanded by remember { mutableStateOf(false) }
     val haptics = LocalHapticFeedback.current
-    // Icon-only rotation: layout stays pinned to portrait positions; the
-    // glyphs rotate via RawRecUi.LocalIconRotation (provided in MainActivity).
 
     var peakingActive by remember { mutableStateOf(false) }
     var falseColorActive by remember { mutableStateOf(false) }
     var zebrasActive by remember { mutableStateOf(false) }
     var histogramActive by remember { mutableStateOf(true) }
     var gridActive by remember { mutableStateOf(false) }
-    // Preview buffer dims and applied rotation angle — reported by onStateChanged
     var vfBufW by remember { mutableStateOf(0) }
     var vfBufH by remember { mutableStateOf(0) }
     var vfRotation by remember { mutableStateOf(0) }
     val initialLookName = when (controls.toneProfile) {
-        "cine_hlg" -> "HLG"
-        "cine_ootf" -> "OOTF"
+        "cine_hlg" -> "HLG HDR"
+        "cine_ootf" -> "Rec.709"
         "cine_warm" -> "Warm"
         "cine_cool" -> "Cool"
         "cine_vintage" -> "Vintage"
         "cine_bright" -> "Bright"
-        "cine_mono" -> "Mono"
-        "default" -> "Natural"
+        "cine_mono" -> "B&W Mono"
+        "default" -> "Linear"
         else -> "Filmic"
     }
     var selectedLook by remember(controls.toneProfile) { mutableStateOf(initialLookName) }
+
+    // Battery Percentage Telemetry
+    var batteryPct by remember { mutableIntStateOf(100) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            runCatching {
+                val bm = context.getSystemService(android.content.Context.BATTERY_SERVICE) as? android.os.BatteryManager
+                val cap = bm?.getIntProperty(android.os.BatteryManager.BATTERY_PROPERTY_CAPACITY) ?: 100
+                if (cap in 1..100) batteryPct = cap
+            }
+            kotlinx.coroutines.delay(10_000)
+        }
+    }
+
+    // Standby Stereo Audio Peak Monitor (dBFS) when mic is enabled and not recording
+    var standbyAudioLeftDb by remember { mutableStateOf(-60f) }
+    var standbyAudioRightDb by remember { mutableStateOf(-60f) }
+    DisposableEffect(micEnabled, stats.active) {
+        var monitorRec: dev.rawrec.app.audio.AudioRecorder? = null
+        if (micEnabled && !stats.active) {
+            val hasPerm = androidx.core.content.ContextCompat.checkSelfPermission(
+                context, android.Manifest.permission.RECORD_AUDIO
+            ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+            if (hasPerm) {
+                runCatching {
+                    val rec = dev.rawrec.app.audio.AudioRecorder(sampleRate = 48_000, channels = 2) { pcm, _ ->
+                        val peaks = dev.rawrec.app.audio.AudioRecorder.computeStereoPeakDb(pcm)
+                        standbyAudioLeftDb = peaks[0]
+                        standbyAudioRightDb = peaks[1]
+                    }
+                    rec.start()
+                    monitorRec = rec
+                }
+            }
+        } else if (!micEnabled) {
+            standbyAudioLeftDb = -60f
+            standbyAudioRightDb = -60f
+        }
+        onDispose {
+            runCatching { monitorRec?.stop() }
+        }
+    }
+    val effectiveAudioLeftDb = if (stats.active) stats.audioPeakLeftDb else standbyAudioLeftDb
+    val effectiveAudioRightDb = if (stats.active) stats.audioPeakRightDb else standbyAudioRightDb
 
     // Live Scope Analyzer (15-20 FPS background analyzer for Histogram, Peaking, False Color, Zebras)
     val scopeAnalyzer = remember { ScopeAnalyzer() }
@@ -221,6 +269,8 @@ fun CinemaViewfinderScreen(
         modifier.fillMaxSize().background(Color.Black)
     }
     val isFrontCamera = selectedCamera?.facing == "front" || selectedCamera?.lensRole == dev.rawrec.app.probe.LensRole.FRONT
+    // Rotation always follows the front sensor mounting; only the left-right flip is optional.
+    val mirrorActive = isFrontCamera && mirrorFront
     Box(modifier = rootModifier) {
 
         // Fixed-orientation viewfinder: feed never rotates, only UI chrome does.
@@ -302,7 +352,7 @@ fun CinemaViewfinderScreen(
                         if (overlayImg != null) {
                             clipRect(left = left, top = top, right = right, bottom = bottom) {
                                 rotate(degrees = vfRotation.toFloat(), pivot = Offset(w / 2f, h / 2f)) {
-                                    if (isFrontCamera) {
+                                    if (mirrorActive) {
                                         scale(scaleX = -1f, scaleY = 1f, pivot = Offset(w / 2f, h / 2f)) {
                                             drawImage(
                                                 image = overlayImg,
@@ -336,6 +386,16 @@ fun CinemaViewfinderScreen(
                             Offset(left, top),
                             Size(right - left, bottom - top),
                             style = Stroke(2f)
+                        )
+                    }
+
+                    // 2px Red Tally Perimeter Outline around the exact active camera frame when recording
+                    if (stats.active) {
+                        drawRect(
+                            color = Color(0xFFFF2D55).copy(alpha = tallyAlpha),
+                            topLeft = Offset(left, top),
+                            size = Size(right - left, bottom - top),
+                            style = Stroke(6f)
                         )
                     }
 
@@ -376,7 +436,7 @@ fun CinemaViewfinderScreen(
                 rotation = r,
                 fillFraction = fillFraction,
                 stretchMode = stretchMode,
-                isFrontCamera = isFrontCamera,
+                isFrontCamera = mirrorActive,
                 activeLut = activeLut,
                 peakingActive = peakingActive,
                 falseColorActive = falseColorActive,
@@ -403,6 +463,7 @@ fun CinemaViewfinderScreen(
                 orientationMode = orientationMode,
                 rawAspect = rawAspect,
                 isFrontCamera = isFrontCamera,
+                mirrorFront = mirrorFront,
                 onPreviewSurfaceAvailable = onPreviewSurfaceAvailable,
                 onStateChanged = { sensorO, dispR, angle, bufW, bufH ->
                     vfBufW = bufW; vfBufH = bufH
@@ -424,24 +485,84 @@ fun CinemaViewfinderScreen(
             )
         }
 
-        // ─── Fixed chrome: HUD, scope rail, dial panel, deck stay at their
-        // portrait layout positions in every orientation; only icon glyphs
-        // rotate (RawRecUi.LocalIconRotation). ───
+        val shutterLabel = if (controls.autoExposure) "AUTO" else if (controls.useShutterAngle) ShutterCalculator.formatShutterAngle(controls.shutterAngle) else ShutterCalculator.formatExposureFraction(controls.exposureNs)
+        val isoLabel = if (controls.autoExposure) "AUTO" else controls.formattedIso
+        val wbLabel = if (controls.autoWhiteBalance) "AUTO" else "${controls.whiteBalanceKelvin}K"
+        val fpsLabel = "%.0f".format(if (stats.active) stats.avgFps else controls.targetFps)
+        val resLabel = selectedRawSize?.let { CameraCatalog.formatCinemaGate(it, controls.aspectIndex) } ?: "GATE"
+        val bitDepthNum = when (selectedCamera?.whiteLevel ?: 1023) {
+            in 0..1023 -> 10
+            in 1024..4095 -> 12
+            else -> 14
+        }
+        val formatBadgeText = "$resLabel · ${bitDepthNum}-bit RAW"
+        // Full sensor-mode detail: pixel dimensions and megapixels (e.g. "4096×3072 · 12.6MP")
+        val resDetailText = selectedRawSize?.let {
+            "${it.width}×${it.height} · ${String.format(java.util.Locale.US, "%.1f", it.width.toLong() * it.height / 1_000_000.0)}MP"
+        }
+        val remainingBytes = (freeStorageBytes - (if (stats.active) stats.bytesWritten else 0L)).coerceAtLeast(0L)
+        val remainingGB = remainingBytes.toDouble() / (1L shl 30)
+        val estimatedBytesPerSec = run {
+            val sz = selectedRawSize
+            val w = sz?.width ?: 4096
+            val h = sz?.height ?: 3072
+            val crop = dev.rawrec.app.codec.MipiPacker.cropRect(controls.framingAspect(false), w, h)
+            val cw = crop?.get(2) ?: w
+            val ch = crop?.get(3) ?: h
+            val rawFrameBytes = (cw.toLong() * ch.toLong() * bitDepthNum) / 8L
+            val ratio = if (useZstd) 0.52 else 1.0
+            (rawFrameBytes * controls.targetFps * ratio).toLong().coerceAtLeast(10_000_000L)
+        }
+        val remainingMins = (remainingBytes / estimatedBytesPerSec) / 60L
+        val storageBadgeText = "%.0fGB · ~%dm".format(remainingGB, remainingMins)
 
-        // Recording tally border
-        if (stats.active) {
-            Box(
-                Modifier
-                    .fillMaxSize()
-                    .border(3.dp, MaterialTheme.colorScheme.error.copy(alpha = tallyAlpha))
-            )
+        val lensShortLabel = when (selectedCamera?.lensRole) {
+            dev.rawrec.app.probe.LensRole.ULTRAWIDE -> if (selectedCamera.focalLength35mmEq > 0f) "${selectedCamera.focalLength35mmEq.roundToInt()}mm UW" else "UW"
+            dev.rawrec.app.probe.LensRole.WIDE -> if (selectedCamera.focalLength35mmEq > 0f) "${selectedCamera.focalLength35mmEq.roundToInt()}mm Wide" else "Wide"
+            dev.rawrec.app.probe.LensRole.TELEPHOTO -> if (selectedCamera.focalLength35mmEq > 0f) "${selectedCamera.focalLength35mmEq.roundToInt()}mm Tele" else "Tele"
+            dev.rawrec.app.probe.LensRole.FRONT -> "21mm Front"
+            else -> "cam${selectedCamera?.id ?: 0}"
+        }
+        val onCycleLens: () -> Unit = {
+            if (!stats.active && availableCameras.isNotEmpty()) {
+                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                val currentIdx = availableCameras.indexOfFirst { it.id == selectedCamera?.id && it.physicalId == selectedCamera?.physicalId }
+                val nextIdx = if (currentIdx >= 0) (currentIdx + 1) % availableCameras.size else 0
+                onCameraSelected?.invoke(availableCameras[nextIdx])
+            }
+        }
+
+        val onTileClick: (String) -> Unit = { tile ->
+            activePanel = when (tile) {
+                "FPS" -> if (activePanel == ActivePanel.FPS) ActivePanel.NONE else ActivePanel.FPS
+                "SHUTTER" -> if (activePanel == ActivePanel.SHUTTER) ActivePanel.NONE else ActivePanel.SHUTTER
+                "ISO" -> if (activePanel == ActivePanel.ISO) ActivePanel.NONE else ActivePanel.ISO
+                "WB" -> if (activePanel == ActivePanel.WB) ActivePanel.NONE else ActivePanel.WB
+                "LOOK" -> if (activePanel == ActivePanel.LOOK) ActivePanel.NONE else ActivePanel.LOOK
+                "RES" -> if (activePanel == ActivePanel.RES) ActivePanel.NONE else ActivePanel.RES
+                else -> ActivePanel.NONE
+            }
+        }
+
+        val mapLookToProfileId: (String) -> String = { look ->
+            when (look.lowercase()) {
+                "hlg hdr", "hlg" -> "cine_hlg"
+                "rec.709", "ootf" -> "cine_ootf"
+                "warm" -> "cine_warm"
+                "cool" -> "cine_cool"
+                "vintage" -> "cine_vintage"
+                "bright" -> "cine_bright"
+                "b&w mono", "mono" -> "cine_mono"
+                "linear", "natural" -> "default"
+                else -> "cine_filmic"
+            }
         }
 
         val configuration = LocalConfiguration.current
         val isPortrait = configuration.orientation == Configuration.ORIENTATION_PORTRAIT ||
                 configuration.screenWidthDp < configuration.screenHeightDp
 
-        // ─── Top Cinema Header (Broadcast status, Scopes strip, Mini-Hist, Settings) ───
+        // ─── Top Cinema Status Strip ───
         if (isPortrait) {
             // Adaptive 2-row layout for portrait / chassis-locked mode
             Column(
@@ -516,14 +637,6 @@ fun CinemaViewfinderScreen(
                                             color = if (stats.dropped == 0L) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
                                             fontWeight = if (stats.dropped > 0L) FontWeight.Bold else FontWeight.Normal
                                         )
-                                        if (stats.thermalStage != "NONE") {
-                                            Text(
-                                                text = stats.thermalStage,
-                                                style = DeckLabelStyle,
-                                                color = MaterialTheme.colorScheme.tertiary,
-                                                fontWeight = FontWeight.Bold
-                                            )
-                                        }
                                     }
                                 }
                             }
@@ -600,67 +713,101 @@ fun CinemaViewfinderScreen(
                         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
                     ) {
                         Row(
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 5.dp),
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            IconToggle(RawRecIcons.Peaks, "Peaking", peakingActive, label = "Peak") { peakingActive = !peakingActive }
-                            IconToggle(RawRecIcons.FalseColor, "False color", falseColorActive, label = "False") { falseColorActive = !falseColorActive }
-                            IconToggle(RawRecIcons.Zebra, "Zebras", zebrasActive, label = "Zebra") { zebrasActive = !zebrasActive }
-                            IconToggle(RawRecIcons.Histogram, "Histogram", histogramActive, label = "Hist") { histogramActive = !histogramActive }
-                            IconToggle(RawRecIcons.Grid, "Grid", gridActive, label = "Grid") { gridActive = !gridActive }
+                            IconToggle(RawRecIcons.Peaks, "Peaking", peakingActive, label = "Peak", compact = true) { peakingActive = !peakingActive }
+                            IconToggle(RawRecIcons.FalseColor, "False color", falseColorActive, label = "False", compact = true) { falseColorActive = !falseColorActive }
+                            IconToggle(RawRecIcons.Zebra, "Zebras", zebrasActive, label = "Zebra", compact = true) { zebrasActive = !zebrasActive }
+                            IconToggle(RawRecIcons.Histogram, "Histogram", histogramActive, label = "Hist", compact = true) { histogramActive = !histogramActive }
+                            IconToggle(RawRecIcons.Grid, "Grid", gridActive, label = "Grid", compact = true) { gridActive = !gridActive }
                             IconToggle(
                                 icon = RawRecIcons.Aspect,
                                 contentDescription = "Framing",
                                 active = controls.aspectIndex > 0,
-                                label = ASPECT_OPTIONS[controls.aspectIndex]
+                                label = ASPECT_OPTIONS[controls.aspectIndex],
+                                compact = true
                             ) {
                                 haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                 onControlsChanged(controls.copy(aspectIndex = (controls.aspectIndex + 1) % ASPECT_OPTIONS.size))
                             }
-                            if (availableCameras.size > 1) {
-                                val lensShortLabel = when (selectedCamera?.lensRole) {
-                                    dev.rawrec.app.probe.LensRole.ULTRAWIDE -> if (selectedCamera.focalLength35mmEq > 0f) "${selectedCamera.focalLength35mmEq.roundToInt()}mm" else "UW"
-                                    dev.rawrec.app.probe.LensRole.WIDE -> if (selectedCamera.focalLength35mmEq > 0f) "${selectedCamera.focalLength35mmEq.roundToInt()}mm" else "W"
-                                    dev.rawrec.app.probe.LensRole.TELEPHOTO -> if (selectedCamera.focalLength35mmEq > 0f) "${selectedCamera.focalLength35mmEq.roundToInt()}mm" else "TELE"
-                                    dev.rawrec.app.probe.LensRole.FRONT -> "Front"
-                                    else -> "cam${selectedCamera?.id ?: 0}"
-                                }
+                            if (isFrontCamera && onMirrorFrontChange != null) {
                                 IconToggle(
-                                    icon = RawRecIcons.Camera,
+                                    icon = RawRecIcons.Mirror,
+                                    contentDescription = "Mirror front camera",
+                                    active = mirrorFront,
+                                    label = if (mirrorFront) "Mirror" else "True",
+                                    compact = true
+                                ) { onMirrorFrontChange(!mirrorFront) }
+                            }
+                            if (availableCameras.size > 1) {
+                                IconToggle(
+                                    icon = RawRecIcons.LensIris,
                                     contentDescription = "Camera Lens",
                                     active = true,
-                                    label = lensShortLabel
-                                ) {
-                                    if (!stats.active && availableCameras.isNotEmpty()) {
-                                        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                        val currentIdx = availableCameras.indexOfFirst { it.id == selectedCamera?.id && it.physicalId == selectedCamera?.physicalId }
-                                        val nextIdx = if (currentIdx >= 0) (currentIdx + 1) % availableCameras.size else 0
-                                        onCameraSelected?.invoke(availableCameras[nextIdx])
-                                    }
-                                }
+                                    label = lensShortLabel.substringBefore(" "),
+                                    compact = true
+                                ) { onCycleLens() }
                             }
                         }
                     }
                 }
+
+                // Row 3: Slim telemetry strip (format, audio, storage, battery)
+                Surface(
+                    shape = CircleShape,
+                    color = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.92f),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                    modifier = Modifier.align(Alignment.CenterHorizontally)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Text(
+                            text = resLabel,
+                            style = DeckLabelStyle,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        StereoAudioVuMeter(
+                            enabled = micEnabled,
+                            leftDb = effectiveAudioLeftDb,
+                            rightDb = effectiveAudioRightDb
+                        )
+                        Text(
+                            text = storageBadgeText,
+                            style = DeckLabelStyle,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = "$batteryPct%",
+                            style = DeckLabelStyle,
+                            fontWeight = FontWeight.Bold,
+                            color = if (batteryPct <= 15) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                }
             }
         } else {
-            // Widescreen Landscape single-row header
+            // ─── Landscape Consolidated Top Status Strip (Edge-to-Edge, Zero 4:3 Obstruction) ───
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                    .padding(horizontal = 10.dp, vertical = 6.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Left: M3 Expressive Timecode & Tally Stadium Capsule
+                // Left Capsule: Tally + SMPTE Timecode + Cinema Format Badge + Live Luma Histogram
                 Surface(
                     shape = CircleShape,
                     color = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.92f),
                     border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
                 ) {
                     Row(
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
@@ -669,7 +816,7 @@ fun CinemaViewfinderScreen(
                             color = if (stats.active) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.primaryContainer
                         ) {
                             Row(
-                                modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp),
+                                modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(5.dp)
                             ) {
@@ -689,120 +836,114 @@ fun CinemaViewfinderScreen(
                         }
                         Text(
                             text = if (stats.active) formatTimecode(stats.elapsedMs, controls.targetFps) else "00:00:00:00",
-                            style = DeckTimecodeStyle,
+                            style = DeckTimecodeStyle.copy(fontSize = 16.sp),
                             color = if (stats.active) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
                         )
-                        if (stats.active) {
-                            Surface(
-                                shape = CircleShape,
-                                color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text(
-                                        text = formatSize(stats.bytesWritten),
-                                        style = DeckLabelStyle,
-                                        color = MaterialTheme.colorScheme.onSurface
-                                    )
-                                    Text(
-                                        text = if (stats.dropped == 0L) "0 DROP" else "${stats.dropped} DROP",
-                                        style = DeckLabelStyle,
-                                        color = if (stats.dropped == 0L) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
-                                        fontWeight = if (stats.dropped > 0L) FontWeight.Bold else FontWeight.Normal
-                                    )
-                                    if (stats.thermalStage != "NONE") {
-                                        Text(
-                                            text = stats.thermalStage,
-                                            style = DeckLabelStyle,
-                                            color = MaterialTheme.colorScheme.tertiary,
-                                            fontWeight = FontWeight.Bold
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-
-                // Center: M3 Expressive Scopes Floating Toolbar
-                Surface(
-                    shape = RoundedCornerShape(24.dp),
-                    color = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.92f),
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        IconToggle(RawRecIcons.Peaks, "Peaking", peakingActive, label = "Peak") { peakingActive = !peakingActive }
-                        IconToggle(RawRecIcons.FalseColor, "False color", falseColorActive, label = "False") { falseColorActive = !falseColorActive }
-                        IconToggle(RawRecIcons.Zebra, "Zebras", zebrasActive, label = "Zebra") { zebrasActive = !zebrasActive }
-                        IconToggle(RawRecIcons.Histogram, "Histogram", histogramActive, label = "Hist") { histogramActive = !histogramActive }
-                        IconToggle(RawRecIcons.Grid, "Grid", gridActive, label = "Grid") { gridActive = !gridActive }
-                        IconToggle(
-                            icon = RawRecIcons.Aspect,
-                            contentDescription = "Framing",
-                            active = controls.aspectIndex > 0,
-                            label = ASPECT_OPTIONS[controls.aspectIndex]
+                        Surface(
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
                         ) {
-                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                            onControlsChanged(controls.copy(aspectIndex = (controls.aspectIndex + 1) % ASPECT_OPTIONS.size))
+                            Text(
+                                text = if (stats.active) {
+                                    "${formatSize(stats.bytesWritten)} · ${stats.dropped} DROP"
+                                } else {
+                                    formatBadgeText
+                                },
+                                style = DeckLabelStyle,
+                                fontWeight = FontWeight.SemiBold,
+                                color = if (stats.active && stats.dropped > 0L) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                            )
                         }
-                        if (availableCameras.size > 1) {
-                            val lensShortLabel = when (selectedCamera?.lensRole) {
-                                dev.rawrec.app.probe.LensRole.ULTRAWIDE -> if (selectedCamera.focalLength35mmEq > 0f) "${selectedCamera.focalLength35mmEq.roundToInt()}mm" else "UW"
-                                dev.rawrec.app.probe.LensRole.WIDE -> if (selectedCamera.focalLength35mmEq > 0f) "${selectedCamera.focalLength35mmEq.roundToInt()}mm" else "W"
-                                dev.rawrec.app.probe.LensRole.TELEPHOTO -> if (selectedCamera.focalLength35mmEq > 0f) "${selectedCamera.focalLength35mmEq.roundToInt()}mm" else "TELE"
-                                dev.rawrec.app.probe.LensRole.FRONT -> "Front"
-                                else -> "cam${selectedCamera?.id ?: 0}"
-                            }
-                            IconToggle(
-                                icon = RawRecIcons.Camera,
-                                contentDescription = "Camera Lens",
-                                active = true,
-                                label = lensShortLabel
+                        val effectiveHistogram = if (histogramActive) (liveHistogram ?: histogram) else null
+                        if (effectiveHistogram != null) {
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                                modifier = Modifier.size(width = 64.dp, height = 26.dp)
                             ) {
-                                if (!stats.active && availableCameras.isNotEmpty()) {
-                                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                    val currentIdx = availableCameras.indexOfFirst { it.id == selectedCamera?.id && it.physicalId == selectedCamera?.physicalId }
-                                    val nextIdx = if (currentIdx >= 0) (currentIdx + 1) % availableCameras.size else 0
-                                    onCameraSelected?.invoke(availableCameras[nextIdx])
-                                }
+                                HistogramScopeView(
+                                    histogram = effectiveHistogram,
+                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp).fillMaxSize()
+                                )
                             }
                         }
                     }
                 }
 
-                // Right: Unified M3 Expressive Telemetry & Navigation Capsule
+                // Right Capsule: Stereo Audio dBFS Meter + Storage/Time Remaining + Battery % + Gallery + Settings
                 Surface(
                     shape = CircleShape,
                     color = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.92f),
                     border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
                 ) {
                     Row(
-                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp),
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        val effectiveHistogram = if (histogramActive) (liveHistogram ?: histogram) else null
-                        if (effectiveHistogram != null) {
-                            Surface(
-                                shape = RoundedCornerShape(16.dp),
-                                color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-                                modifier = Modifier.size(width = 84.dp, height = 36.dp)
+                        // 1. Live Stereo Audio Level Meter (dBFS)
+                        StereoAudioVuMeter(
+                            enabled = micEnabled,
+                            leftDb = effectiveAudioLeftDb,
+                            rightDb = effectiveAudioRightDb
+                        )
+
+                        // 2. Remaining Storage & Estimated Recording Time
+                        Surface(
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
                             ) {
-                                HistogramScopeView(
-                                    histogram = effectiveHistogram,
-                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp).fillMaxSize()
+                                Icon(
+                                    imageVector = RawRecIcons.Folder,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(11.dp)
+                                )
+                                Text(
+                                    text = storageBadgeText,
+                                    style = DeckLabelStyle,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurface
                                 )
                             }
                         }
+
+                        // 3. Battery Percentage
+                        Surface(
+                            shape = CircleShape,
+                            color = if (batteryPct <= 15) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.surfaceContainerHigh,
+                            border = BorderStroke(1.dp, if (batteryPct <= 15) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.outlineVariant)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Icon(
+                                    imageVector = RawRecIcons.Battery,
+                                    contentDescription = null,
+                                    tint = if (batteryPct <= 15) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(12.dp)
+                                )
+                                Text(
+                                    text = "$batteryPct%",
+                                    style = DeckLabelStyle,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (batteryPct <= 15) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                        }
+
+                        // 4. Studio Gallery & Settings
                         FilledTonalIconButton(
                             onClick = onOpenGallery,
                             shape = CircleShape,
@@ -810,12 +951,12 @@ fun CinemaViewfinderScreen(
                                 containerColor = MaterialTheme.colorScheme.secondaryContainer,
                                 contentColor = MaterialTheme.colorScheme.onSecondaryContainer
                             ),
-                            modifier = Modifier.size(36.dp)
+                            modifier = Modifier.size(30.dp)
                         ) {
                             Icon(
                                 RawRecIcons.Movie,
                                 contentDescription = "Gallery",
-                                modifier = Modifier.size(17.dp)
+                                modifier = Modifier.size(15.dp)
                             )
                         }
                         FilledTonalIconButton(
@@ -825,34 +966,16 @@ fun CinemaViewfinderScreen(
                                 containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
                                 contentColor = MaterialTheme.colorScheme.onSurfaceVariant
                             ),
-                            modifier = Modifier.size(36.dp)
+                            modifier = Modifier.size(30.dp)
                         ) {
                             Icon(
                                 RawRecIcons.Settings,
                                 contentDescription = "Settings",
-                                modifier = Modifier.size(17.dp)
+                                modifier = Modifier.size(15.dp)
                             )
                         }
                     }
                 }
-            }
-        }
-
-        val shutterLabel = if (controls.autoExposure) "AUTO" else if (controls.useShutterAngle) ShutterCalculator.formatShutterAngle(controls.shutterAngle) else ShutterCalculator.formatExposureFraction(controls.exposureNs)
-        val isoLabel = if (controls.autoExposure) "AUTO" else controls.formattedIso
-        val wbLabel = if (controls.autoWhiteBalance) "AUTO" else "${controls.whiteBalanceKelvin}K"
-        val fpsLabel = "%.0f".format(if (stats.active) stats.avgFps else controls.targetFps)
-        val resLabel = selectedRawSize?.let { CameraCatalog.formatShortResolution(it) } ?: "RES"
-
-        val onTileClick: (String) -> Unit = { tile ->
-            activePanel = when (tile) {
-                "FPS" -> if (activePanel == ActivePanel.FPS) ActivePanel.NONE else ActivePanel.FPS
-                "SHUTTER" -> if (activePanel == ActivePanel.SHUTTER) ActivePanel.NONE else ActivePanel.SHUTTER
-                "ISO" -> if (activePanel == ActivePanel.ISO) ActivePanel.NONE else ActivePanel.ISO
-                "WB" -> if (activePanel == ActivePanel.WB) ActivePanel.NONE else ActivePanel.WB
-                "LOOK" -> if (activePanel == ActivePanel.LOOK) ActivePanel.NONE else ActivePanel.LOOK
-                "RES" -> if (activePanel == ActivePanel.RES) ActivePanel.NONE else ActivePanel.RES
-                else -> ActivePanel.NONE
             }
         }
 
@@ -897,18 +1020,7 @@ fun CinemaViewfinderScreen(
                                 onControlsChanged = onControlsChanged,
                                 onLookSelected = { look ->
                                     selectedLook = look
-                                    val profId = when (look.lowercase()) {
-                                        "hlg" -> "cine_hlg"
-                                        "ootf" -> "cine_ootf"
-                                        "warm" -> "cine_warm"
-                                        "cool" -> "cine_cool"
-                                        "vintage" -> "cine_vintage"
-                                        "bright" -> "cine_bright"
-                                        "mono" -> "cine_mono"
-                                        "natural" -> "default"
-                                        else -> "cine_filmic"
-                                    }
-                                    onControlsChanged(controls.copy(toneProfile = profId))
+                                    onControlsChanged(controls.copy(toneProfile = mapLookToProfileId(look)))
                                 },
                                 onRawSizeSelected = onRawSizeSelected,
                                 onDismiss = { activePanel = ActivePanel.NONE }
@@ -948,6 +1060,7 @@ fun CinemaViewfinderScreen(
                     wbValue = wbLabel,
                     lookValue = selectedLook,
                     resValue = resLabel,
+                    resDetail = resDetailText,
                     activeTile = when (activePanel) {
                         ActivePanel.FPS -> "FPS"
                         ActivePanel.SHUTTER -> "SHUTTER"
@@ -963,13 +1076,12 @@ fun CinemaViewfinderScreen(
                     modifier = Modifier.fillMaxWidth()
                 )
 
-                Spacer(Modifier.height(2.dp))
-
-                // Master Record Button Row with Quick Gallery Review
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.Center,
-                    verticalAlignment = Alignment.CenterVertically
+                // Record row: trigger exactly centered, gallery shortcut pinned to the left edge
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 4.dp, bottom = 2.dp),
+                    contentAlignment = Alignment.Center
                 ) {
                     FilledTonalIconButton(
                         onClick = onOpenGallery,
@@ -978,7 +1090,10 @@ fun CinemaViewfinderScreen(
                             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.88f),
                             contentColor = MaterialTheme.colorScheme.primary
                         ),
-                        modifier = Modifier.size(48.dp)
+                        modifier = Modifier
+                            .align(Alignment.CenterStart)
+                            .padding(start = 28.dp)
+                            .size(48.dp)
                     ) {
                         Icon(
                             RawRecIcons.Movie,
@@ -987,27 +1102,93 @@ fun CinemaViewfinderScreen(
                         )
                     }
 
-                    Spacer(Modifier.width(28.dp))
-
                     RecordButtonExpressive(
                         recording = stats.active,
-                        onToggle = onRecordToggle
+                        onToggle = onRecordToggle,
+                        modifier = Modifier.size(64.dp)
                     )
-
-                    Spacer(Modifier.width(76.dp))
                 }
             }
         } else {
-            // ─── Landscape Studio Deck Layout ───
-            // Right-side Cinema Parameter Matrix Dock & Floating Dial Panel
+            // ─── Landscape "Clean Feed + Dual-Thumb Edge" Pillarbox Architecture ───
+            // 1. Left Pillarbox (Left Thumb: Vertical Assist Column + Vertical Follow-Focus Wheel)
+            Row(
+                modifier = Modifier
+                    .align(Alignment.CenterStart)
+                    .padding(start = 10.dp, top = 48.dp, bottom = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                // Outer Left Column: Monitoring & Framing Assist Toggles
+                Surface(
+                    shape = RoundedCornerShape(22.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.92f),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxHeight()
+                            .padding(horizontal = 5.dp, vertical = 6.dp),
+                        verticalArrangement = Arrangement.SpaceEvenly,
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        IconToggle(RawRecIcons.Peaks, "Peaking", peakingActive, label = "Peak") { peakingActive = !peakingActive }
+                        IconToggle(RawRecIcons.FalseColor, "False color", falseColorActive, label = "False") { falseColorActive = !falseColorActive }
+                        IconToggle(RawRecIcons.Zebra, "Zebras", zebrasActive, label = "Zebra") { zebrasActive = !zebrasActive }
+                        IconToggle(RawRecIcons.Histogram, "Histogram", histogramActive, label = "Hist") { histogramActive = !histogramActive }
+                        IconToggle(RawRecIcons.Grid, "Grid", gridActive, label = "Grid") { gridActive = !gridActive }
+                        IconToggle(
+                            icon = RawRecIcons.Aspect,
+                            contentDescription = "Framing",
+                            active = controls.aspectIndex > 0,
+                            label = ASPECT_OPTIONS[controls.aspectIndex]
+                        ) {
+                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            onControlsChanged(controls.copy(aspectIndex = (controls.aspectIndex + 1) % ASPECT_OPTIONS.size))
+                        }
+                        if (isFrontCamera && onMirrorFrontChange != null) {
+                            IconToggle(
+                                icon = RawRecIcons.Mirror,
+                                contentDescription = "Mirror front camera",
+                                active = mirrorFront,
+                                label = if (mirrorFront) "Mirror" else "True"
+                            ) { onMirrorFrontChange(!mirrorFront) }
+                        }
+                    }
+                }
+
+                // Inner Left Column: Vertical Left-Thumb Follow-Focus Wheel & A-B Rack Puller
+                CinemaVerticalFocusWheel(
+                    currentDiopters = controls.focusDiopters,
+                    autoFocus = controls.autoFocus,
+                    focusPointA = controls.focusPointA,
+                    focusPointB = controls.focusPointB,
+                    rackDurationMs = controls.rackDurationMs,
+                    isFixedFocus = selectedCamera?.isFixedFocus == true,
+                    onFocusChanged = { d, af ->
+                        onControlsChanged(controls.copy(focusDiopters = d, autoFocus = af))
+                    },
+                    onSetPointA = { pA ->
+                        onControlsChanged(controls.copy(focusPointA = pA))
+                    },
+                    onSetPointB = { pB ->
+                        onControlsChanged(controls.copy(focusPointB = pB))
+                    },
+                    onSetRackDuration = { dur ->
+                        onControlsChanged(controls.copy(rackDurationMs = dur))
+                    }
+                )
+            }
+
+            // 2. Right Pillarbox (Right Thumb: Optical Lens Switcher, Compact 188dp Exposure Matrix, Isolated Record Trigger)
             Row(
                 modifier = Modifier
                     .align(Alignment.CenterEnd)
-                    .padding(end = 12.dp, top = 48.dp, bottom = 54.dp),
+                    .padding(end = 6.dp, top = 48.dp, bottom = 10.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                // Floating Dial Panel (M3 Expressive extraLarge Sheet)
+                // Floating Dial Panel (M3 Expressive extraLarge Sheet — only visible when a parameter tile is active)
                 AnimatedVisibility(
                     visible = activePanel != ActivePanel.NONE,
                     enter = slideInHorizontally { it } + fadeIn(),
@@ -1018,7 +1199,7 @@ fun CinemaViewfinderScreen(
                         color = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.95f),
                         border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)),
                         modifier = Modifier
-                            .width(308.dp)
+                            .width(296.dp)
                             .heightIn(max = 320.dp)
                             .padding(4.dp)
                     ) {
@@ -1038,18 +1219,7 @@ fun CinemaViewfinderScreen(
                                 onControlsChanged = onControlsChanged,
                                 onLookSelected = { look ->
                                     selectedLook = look
-                                    val profId = when (look.lowercase()) {
-                                        "hlg" -> "cine_hlg"
-                                        "ootf" -> "cine_ootf"
-                                        "warm" -> "cine_warm"
-                                        "cool" -> "cine_cool"
-                                        "vintage" -> "cine_vintage"
-                                        "bright" -> "cine_bright"
-                                        "mono" -> "cine_mono"
-                                        "natural" -> "default"
-                                        else -> "cine_filmic"
-                                    }
-                                    onControlsChanged(controls.copy(toneProfile = profId))
+                                    onControlsChanged(controls.copy(toneProfile = mapLookToProfileId(look)))
                                 },
                                 onRawSizeSelected = onRawSizeSelected,
                                 onDismiss = { activePanel = ActivePanel.NONE }
@@ -1058,7 +1228,7 @@ fun CinemaViewfinderScreen(
                     }
                 }
 
-                // The Dock
+                // Right Pillarbox Dock (188dp wide — zero overlap on the 4:3 frame)
                 CinemaParameterDock(
                     fpsValue = fpsLabel,
                     shutterValue = shutterLabel,
@@ -1066,6 +1236,7 @@ fun CinemaViewfinderScreen(
                     wbValue = wbLabel,
                     lookValue = selectedLook,
                     resValue = resLabel,
+                    resDetail = resDetailText,
                     activeTile = when (activePanel) {
                         ActivePanel.FPS -> "FPS"
                         ActivePanel.SHUTTER -> "SHUTTER"
@@ -1078,37 +1249,10 @@ fun CinemaViewfinderScreen(
                     autoExposure = controls.autoExposure,
                     autoWb = controls.autoWhiteBalance,
                     recording = stats.active,
+                    lensLabel = if (availableCameras.size > 1) lensShortLabel else null,
+                    onLensSwitch = if (availableCameras.size > 1) onCycleLens else null,
                     onTileClick = onTileClick,
                     onRecordToggle = onRecordToggle
-                )
-            }
-
-            // Bottom Cinema Focus Rail with A-B Rack Focus Puller
-            Box(
-                modifier = Modifier
-                    .align(Alignment.BottomStart)
-                    .fillMaxWidth()
-                    .padding(start = 16.dp, end = 254.dp, bottom = 12.dp)
-            ) {
-                CinemaFocusRail(
-                    currentDiopters = controls.focusDiopters,
-                    autoFocus = controls.autoFocus,
-                    focusPointA = controls.focusPointA,
-                    focusPointB = controls.focusPointB,
-                    rackDurationMs = controls.rackDurationMs,
-                    isFixedFocus = selectedCamera?.isFixedFocus == true,
-                    onFocusChanged = { d, af ->
-                        onControlsChanged(controls.copy(focusDiopters = d, autoFocus = af))
-                    },
-                    onSetPointA = { pA ->
-                        onControlsChanged(controls.copy(focusPointA = pA))
-                    },
-                    onSetPointB = { pB ->
-                        onControlsChanged(controls.copy(focusPointB = pB))
-                    },
-                    onSetRackDuration = { dur ->
-                        onControlsChanged(controls.copy(rackDurationMs = dur))
-                    }
                 )
             }
         }
@@ -1302,9 +1446,9 @@ private fun LookDialPanel(
     currentLook: String,
     onLookSelected: (String) -> Unit
 ) {
-    val looks = listOf("Filmic", "OOTF", "Warm", "Cool", "Vintage", "Bright", "Mono", "Natural")
+    val looks = listOf("Filmic", "Rec.709", "HLG HDR", "Linear", "Warm", "Cool", "Vintage", "B&W Mono")
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        DialHeader("Look / Tone Profile ($currentLook)")
+        DialHeader("Color Look / Monitoring ($currentLook)")
         ChoiceChipRow(
             options = looks,
             selected = { it.equals(currentLook, ignoreCase = true) },
@@ -1320,8 +1464,8 @@ private fun ResDialPanel(
     onSizeSelected: (android.util.Size) -> Unit
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        val currentLabel = selectedSize?.let { CameraCatalog.formatShortResolution(it) } ?: "RES"
-        DialHeader("RAW Sensor Mode ($currentLabel)")
+        val currentLabel = selectedSize?.let { CameraCatalog.formatCinemaGate(it) } ?: "GATE"
+        DialHeader("Cinema Sensor Gate ($currentLabel)")
         ChoiceChipRow(
             options = availableSizes.map { CameraCatalog.formatResolution(it, availableSizes) },
             selected = { label -> selectedSize != null && CameraCatalog.formatResolution(selectedSize, availableSizes) == label },
@@ -1329,6 +1473,90 @@ private fun ResDialPanel(
                 availableSizes.firstOrNull { CameraCatalog.formatResolution(it, availableSizes) == label }?.let(onSizeSelected)
             }
         )
+    }
+}
+
+/**
+ * Compact dual-channel (L/R) Stereo Audio VU / Peak Meter in dBFS (-60dB .. 0dB)
+ * with green/cyan normal range, amber (-12..-3dB) headroom warning, and crimson (>-3dB) clip segments.
+ */
+@Composable
+private fun StereoAudioVuMeter(
+    enabled: Boolean,
+    leftDb: Float,
+    rightDb: Float,
+    modifier: Modifier = Modifier
+) {
+    val primaryColor = MaterialTheme.colorScheme.primary
+    val warnColor = MaterialTheme.colorScheme.tertiary
+    val clipColor = MaterialTheme.colorScheme.error
+    val dimTrackColor = MaterialTheme.colorScheme.surfaceContainerHighest
+
+    Surface(
+        shape = CircleShape,
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        modifier = modifier
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(5.dp)
+        ) {
+            Icon(
+                imageVector = if (enabled) RawRecIcons.Mic else RawRecIcons.VolumeMute,
+                contentDescription = "Audio Meter",
+                tint = if (enabled) primaryColor else MaterialTheme.colorScheme.outline,
+                modifier = Modifier.size(11.dp)
+            )
+            if (enabled) {
+                Canvas(modifier = Modifier.size(width = 48.dp, height = 12.dp)) {
+                    val segments = 10
+                    val gap = 1.5f
+                    val segW = (size.width - gap * (segments - 1)) / segments
+                    val barH = (size.height - 2f) / 2f
+
+                    val normL = ((leftDb.coerceIn(-60f, 0f) + 60f) / 60f)
+                    val normR = ((rightDb.coerceIn(-60f, 0f) + 60f) / 60f)
+
+                    for (s in 0 until segments) {
+                        val thresh = (s + 1).toFloat() / segments
+                        val segColor = when {
+                            s >= 9 -> clipColor
+                            s >= 7 -> warnColor
+                            else -> primaryColor
+                        }
+                        val x = s * (segW + gap)
+                        drawRect(
+                            color = if (normL >= thresh) segColor else dimTrackColor,
+                            topLeft = Offset(x, 0f),
+                            size = Size(segW, barH)
+                        )
+                        drawRect(
+                            color = if (normR >= thresh) segColor else dimTrackColor,
+                            topLeft = Offset(x, barH + 2f),
+                            size = Size(segW, barH)
+                        )
+                    }
+                }
+                val peakDb = maxOf(leftDb, rightDb).toInt()
+                Text(
+                    text = if (peakDb <= -59) "-∞dB" else "${peakDb}dB",
+                    style = DeckLabelStyle.copy(fontSize = 8.sp),
+                    color = when {
+                        peakDb >= -3 -> clipColor
+                        peakDb >= -12 -> warnColor
+                        else -> MaterialTheme.colorScheme.onSurfaceVariant
+                    }
+                )
+            } else {
+                Text(
+                    text = "MIC OFF",
+                    style = DeckLabelStyle.copy(fontSize = 8.sp),
+                    color = MaterialTheme.colorScheme.outline
+                )
+            }
+        }
     }
 }
 

@@ -41,9 +41,9 @@ object ViewfinderMath {
                 (360 - (sensorOrientation % 360)) % 360
             }
         }
-        OrientationMode.CHASSIS_LOCKED -> {
-            if (isFrontCamera) 180 else 0
-        }
+        // The front mirror is applied after rotation; adding 180° here turned the
+        // selfie feed into a vertical flip (upside-down face) in portrait.
+        OrientationMode.CHASSIS_LOCKED -> 0
     }
 
     /** Final angle: manual override wins over orientation mode default. */

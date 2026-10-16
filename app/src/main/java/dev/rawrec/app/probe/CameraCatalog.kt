@@ -238,29 +238,67 @@ object CameraCatalog {
         )
     }
 
-    fun formatResolution(size: Size, allSizes: List<Size> = emptyList()): String {
-        val mp = (size.width.toLong() * size.height) / 1_000_000.0
-        val maxArea = allSizes.maxOfOrNull { it.width.toLong() * it.height } ?: 0L
-        val isMax = size.width.toLong() * size.height == maxArea && allSizes.size > 1
-        val label = when {
-            isMax && mp >= 40.0 -> "${String.format(java.util.Locale.US, "%.0f", mp)}MP Full"
-            mp in 10.0..15.0 -> "${String.format(java.util.Locale.US, "%.1f", mp)}MP Binned"
-            size.width == 3840 && size.height == 2160 -> "4K"
-            size.width == 1920 && size.height == 1080 -> "1080p"
-            mp >= 1.0 -> "${String.format(java.util.Locale.US, "%.1f", mp)}MP"
-            else -> "${size.width}×${size.height}"
+    /** Full RAW mode description, e.g. "4096×3072 · 12.6MP Binned · 4.1K OG". */
+    fun formatResolution(size: Size, allSizes: List<Size> = emptyList()): String =
+        describeMode(
+            size.width, size.height,
+            allSizes.maxOfOrNull { it.width.toLong() * it.height } ?: 0L,
+            allSizes.size > 1
+        )
+
+    fun describeMode(width: Int, height: Int, maxArea: Long = 0L, hasChoices: Boolean = false): String {
+        val area = width.toLong() * height
+        val mp = area / 1_000_000.0
+        val tag = when {
+            hasChoices && area == maxArea && mp >= 40.0 -> " Full"
+            mp in 10.0..15.0 -> " Binned"
+            else -> ""
         }
-        return "${size.width}×${size.height} ($label)"
+        val mpText = String.format(java.util.Locale.US, "%.1f", mp)
+        return "${width}×${height} · ${mpText}MP$tag · ${formatCinemaGate(width, height, 0)}"
     }
 
+    /** Compact mode label, e.g. "4.1K OG · 12.6MP". */
     fun formatShortResolution(size: Size): String {
-        val mp = (size.width.toLong() * size.height) / 1_000_000.0
-        return when {
-            mp >= 40.0 -> "${String.format(java.util.Locale.US, "%.0f", mp)}MP"
-            mp in 10.0..15.0 -> "${String.format(java.util.Locale.US, "%.1f", mp)}MP"
-            size.width == 3840 && size.height == 2160 -> "4K"
-            size.width == 1920 && size.height == 1080 -> "1080p"
-            else -> String.format(java.util.Locale.US, "%.1fMP", mp)
+        val mp = size.width.toLong() * size.height / 1_000_000.0
+        return "${formatCinemaGate(size, 0)} · ${String.format(java.util.Locale.US, "%.1f", mp)}MP"
+    }
+
+    /**
+     * Formats sensor dimensions using standard cinema video gate terminology
+     * (e.g., "4.1K OG", "4.1K 2.39", "4.1K 16:9", "3.1K 1:1", "3.3K OG", "2.6K OG")
+     * instead of still-photography megapixels.
+     */
+    fun formatCinemaGate(size: Size, aspectIndex: Int = 0): String =
+        formatCinemaGate(size.width, size.height, aspectIndex)
+
+    /** Framing aspect for a viewfinder aspect index; mirrors CameraControlState.framingAspect. */
+    private fun framingAspectFor(aspectIndex: Int): Float? = when (aspectIndex) {
+        1 -> 2.39f
+        2 -> 16f / 9f
+        4 -> 1.0f
+        else -> null
+    }
+
+    fun formatCinemaGate(width: Int, height: Int, aspectIndex: Int = 0): String {
+        val crop = dev.rawrec.app.codec.MipiPacker.cropRect(framingAspectFor(aspectIndex), width, height)
+        val effW = crop?.get(2) ?: width
+        val effH = crop?.get(3) ?: height
+        if (effW == 3840 && effH == 2160) return "4K UHD"
+        if (effW == 1920 && effH == 1080) return "1080p"
+        val k = if (effW >= 1000) {
+            String.format(java.util.Locale.US, "%.1fK", effW / 1000.0)
+        } else {
+            "${effH}p"
         }
+        val ratio = effW.toDouble() / effH.coerceAtLeast(1).toDouble()
+        // Judge by the delivered shape: a native 16:9 sensor mode is 16:9, not open gate.
+        val tag = when {
+            kotlin.math.abs(ratio - 16.0 / 9.0) < 0.05 -> "16:9"
+            kotlin.math.abs(ratio - 2.39) < 0.08 -> "2.39"
+            kotlin.math.abs(ratio - 1.0) < 0.02 -> "1:1"
+            else -> "OG"
+        }
+        return "$k $tag"
     }
 }

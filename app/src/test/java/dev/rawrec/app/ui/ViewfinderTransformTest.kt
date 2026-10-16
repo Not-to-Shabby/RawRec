@@ -283,7 +283,8 @@ class ViewfinderTransformTest {
         // Front camera (270° sensor)
         assertEquals(90, ViewfinderMath.autoRotation(270, 90, ViewfinderMath.OrientationMode.CINEMA_LANDSCAPE, isFrontCamera = false))
         assertEquals(270, ViewfinderMath.autoRotation(270, 90, ViewfinderMath.OrientationMode.CINEMA_LANDSCAPE, isFrontCamera = true))
-        assertEquals(180, ViewfinderMath.autoRotation(270, 0, ViewfinderMath.OrientationMode.CHASSIS_LOCKED, isFrontCamera = true))
+        // Portrait front camera: no extra 180° (the mirror alone gives the selfie view)
+        assertEquals(0, ViewfinderMath.autoRotation(270, 0, ViewfinderMath.OrientationMode.CHASSIS_LOCKED, isFrontCamera = true))
     }
 
     @Test

@@ -587,4 +587,57 @@ object RawRecIcons {
             }
         }
     }
+
+    /** Cinema optical lens iris / multi-blade aperture icon. */
+    val LensIris: ImageVector by lazy {
+        builder("LensIris") {
+            path(
+                fill = null, stroke = Stroke, strokeLineWidth = STROKE,
+                strokeLineCap = StrokeCap.Round, strokeLineJoin = StrokeJoin.Round
+            ) {
+                circle(12f, 12f, 9f)
+                moveTo(14.3f, 8f); lineTo(20f, 14f)
+                moveTo(9.7f, 8f); lineTo(15.5f, 3.8f)
+                moveTo(7.4f, 12f); lineTo(10.5f, 4.2f)
+                moveTo(9.7f, 16f); lineTo(4f, 10f)
+                moveTo(14.3f, 16f); lineTo(8.5f, 20.2f)
+                moveTo(16.6f, 12f); lineTo(13.5f, 19.8f)
+            }
+        }
+    }
+
+    /** Mirror (flip horizontally) icon: two facing triangles around a dashed axis. */
+    val Mirror: ImageVector by lazy {
+        builder("Mirror") {
+            path(
+                fill = null, stroke = Stroke, strokeLineWidth = STROKE,
+                strokeLineCap = StrokeCap.Round, strokeLineJoin = StrokeJoin.Round
+            ) {
+                moveTo(12f, 3.5f); lineTo(12f, 5.5f)
+                moveTo(12f, 9f); lineTo(12f, 11f)
+                moveTo(12f, 13f); lineTo(12f, 15f)
+                moveTo(12f, 18.5f); lineTo(12f, 20.5f)
+                moveTo(9.5f, 7f); lineTo(3.5f, 17f); lineTo(9.5f, 17f); close()
+                moveTo(14.5f, 7f); lineTo(20.5f, 17f); lineTo(14.5f, 17f); close()
+            }
+        }
+    }
+
+    /** Battery telemetry icon. */
+    val Battery: ImageVector by lazy {
+        builder("Battery") {
+            path(
+                fill = null, stroke = Stroke, strokeLineWidth = STROKE,
+                strokeLineCap = StrokeCap.Round, strokeLineJoin = StrokeJoin.Round
+            ) {
+                moveTo(3f, 7.5f)
+                lineTo(18.5f, 7.5f)
+                lineTo(18.5f, 16.5f)
+                lineTo(3f, 16.5f)
+                close()
+                moveTo(21f, 10f)
+                lineTo(21f, 14f)
+            }
+        }
+    }
 }
